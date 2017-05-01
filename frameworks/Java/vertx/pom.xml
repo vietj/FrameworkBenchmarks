@@ -1,14 +1,14 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
-	<groupId>com.jebbstewart</groupId>
+	<groupId>com.techempower</groupId>
 	<artifactId>vertx.benchmark</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 
 	<properties>
 		<!-- the main class -->
 		<main.class>vertx.WebServer</main.class>
-		<stack.version>3.3.2</stack.version>
+		<stack.version>3.4.2-SNAPSHOT</stack.version>
 	</properties>
 
 	<repositories>
@@ -31,6 +31,16 @@
 			<groupId>io.vertx</groupId>
 			<artifactId>vertx-core</artifactId>
 			<version>${stack.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>io.vertx</groupId>
+			<artifactId>vertx-pg-client</artifactId>
+			<version>${stack.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>com.github.alaisi.pgasync</groupId>
+			<artifactId>postgres-async-driver</artifactId>
+			<version>0.9</version>
 		</dependency>
 	</dependencies>
 
