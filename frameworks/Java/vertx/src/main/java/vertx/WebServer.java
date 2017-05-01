@@ -22,6 +22,8 @@ import io.vertx.pgclient.PgClient;
 import io.vertx.pgclient.PgClientOptions;
 import vertx.model.World;
 
+import java.io.File;
+import java.nio.file.Files;
 import java.util.Collections;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -162,11 +164,12 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
 		}
 	}
 
-	public static void main(String[] args) {
+	public static void main(String[] args) throws Exception {
+		JsonObject config = new JsonObject(new String(Files.readAllBytes(new File(args[0]).toPath())));
 		int procs = Runtime.getRuntime().availableProcessors();
 		Vertx vertx = Vertx.vertx();
 		vertx.deployVerticle(WebServer.class.getName(), 
-				new DeploymentOptions().setInstances(procs*2), event -> {
+				new DeploymentOptions().setInstances(procs*2).setConfig(config), event -> {
 					if (event.succeeded()) {
 						logger.debug("Your Vert.x application is started!");
 					} else {
