@@ -150,7 +150,7 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
 							.putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
 							.end(Json.encode(new World(row.getInt(0), row.getInt(1))));
 				} else {
-					resp.setStatusCode(500).end();
+					resp.setStatusCode(500).end(ar.cause().getMessage());
 				}
 			});
 			if (req.response() != null) {
