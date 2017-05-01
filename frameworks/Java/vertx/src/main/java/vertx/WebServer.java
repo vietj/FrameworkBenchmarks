@@ -33,7 +33,7 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
 
 	private static final String PATH_PLAINTEXT = "/plaintext";
 	private static final String PATH_JSON = "/json";
-	private static final String PATH_PSQL = "/psql/queries";
+	private static final String PATH_PSQL_DB = "/psql/db";
 
 	private static final String RESPONSE_TYPE_PLAIN = "text/plain";
 	private static final String RESPONSE_TYPE_JSON = "application/json";
@@ -81,7 +81,7 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
 		case PATH_JSON:
 			handleJson(request);
 			break;
-		case PATH_PSQL:
+		case PATH_PSQL_DB:
 			pg.handle(request);
 			break;
 		default:
