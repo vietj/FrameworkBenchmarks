@@ -14,6 +14,7 @@ import io.vertx.core.http.HttpServer;
 import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.http.HttpServerResponse;
+import io.vertx.core.http.impl.HttpServerInternal;
 import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
@@ -26,8 +27,9 @@ import java.io.File;
 import java.nio.file.Files;
 import java.util.Collections;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Function;
 
-public class WebServer extends AbstractVerticle implements Handler<HttpServerRequest> {
+public class WebServer extends AbstractVerticle implements Function<HttpServerRequest, Future<HttpServerResponse>> {
 
 	static Logger logger = LoggerFactory.getLogger(WebServer.class.getName());
 
@@ -50,7 +52,7 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
 
 	private String dateString;
 
-	private HttpServer server;
+	private HttpServerInternal server;
 
 	private PostgresClient pg;
 
@@ -59,9 +61,9 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
 
 		int port = 8080;
 
-		server = vertx.createHttpServer(new HttpServerOptions().setPipelining(true));
+		server = (HttpServerInternal) vertx.createHttpServer(new HttpServerOptions());
 
-		server.requestHandler(WebServer.this).listen(port);
+		server.requestHandler(WebServer.this).setPipeliningLimit(4).listen(port);
 
 		dateString = java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME.format(java.time.ZonedDateTime.now());
 
@@ -73,20 +75,20 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
 	}
 
 	@Override
-	public void handle(HttpServerRequest request) {
+	public Future<HttpServerResponse> apply(HttpServerRequest request) {
 		switch (request.path()) {
-		case PATH_PLAINTEXT:
-			handlePlainText(request);
-			break;
-		case PATH_JSON:
-			handleJson(request);
-			break;
-		case PATH_PSQL_DB:
-			pg.handle(request);
-			break;
-		default:
-			request.response().setStatusCode(404);
-			request.response().end();
+			case PATH_PLAINTEXT:
+				handlePlainText(request);
+				return null;
+			case PATH_JSON:
+				handleJson(request);
+				return null;
+			case PATH_PSQL_DB:
+				return pg.handle(request);
+			default:
+				request.response().setStatusCode(404);
+				request.response().end();
+				return null;
 		}
 	}
 
@@ -131,36 +133,33 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
 			this.database = PgClient.create(vertx, options);
 		}
 
-		final void handle(final HttpServerRequest req) {
-			Future<HttpServerResponse> responseFuture = Future.future();
-			Future<ResultSet> resultFuture = Future.future();
-			CompositeFuture fut = CompositeFuture.join(responseFuture, resultFuture);
-			fut.setHandler(ar -> {
-				HttpServerResponse resp = req.response();
-				if (ar.succeeded()) {
-					com.github.pgasync.ResultSet resultSet = resultFuture.result();
-					if (resultSet == null || resultSet.size() == 0) {
-						resp.setStatusCode(404).end();
-						return;
-					}
-					Row row = resultSet.row(0);
-					resp
-							.putHeader(HttpHeaders.SERVER, SERVER)
-							.putHeader(HttpHeaders.DATE, dateString)
-							.putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
-							.end(Json.encode(new World(row.getInt(0), row.getInt(1))));
-				} else {
-					resp.setStatusCode(500).end(ar.cause().getMessage());
+		final Future<HttpServerResponse> handle(HttpServerRequest req) {
+			Future<HttpServerResponse> respFut = Future.future();
+			Future<ResultSet> resFut = Future.future();
+			respFut.setHandler(ar1 -> {
+				if (ar1.succeeded()) {
+					HttpServerResponse resp = req.response();
+					resFut.setHandler(ar2 -> {
+						if (ar2.succeeded()) {
+							com.github.pgasync.ResultSet resultSet = resFut.result();
+							if (resultSet == null || resultSet.size() == 0) {
+								resp.setStatusCode(404).end();
+								return;
+							}
+							Row row = resultSet.row(0);
+							resp
+									.putHeader(HttpHeaders.SERVER, SERVER)
+									.putHeader(HttpHeaders.DATE, dateString)
+									.putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
+									.end(Json.encode(new World(row.getInt(0), row.getInt(1))));
+						} else {
+							resp.setStatusCode(500).end(ar1.cause().getMessage());
+						}
+					});
 				}
 			});
-			if (req.response() != null) {
-				responseFuture.complete(req.response());
-			} else {
-				req.responseHandler(resp -> {
-					responseFuture.complete(resp);
-				});
-			}
-			database.query("SELECT id, randomnumber from WORLD where id = " + randomWorld(), resultFuture);
+			database.query("SELECT id, randomnumber from WORLD where id = " + randomWorld(), resFut);
+			return respFut;
 		}
 	}
 
