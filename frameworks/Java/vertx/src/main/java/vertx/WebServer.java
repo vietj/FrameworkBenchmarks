@@ -3,14 +3,12 @@ package vertx;
 import com.github.pgasync.ResultSet;
 import com.github.pgasync.Row;
 import io.vertx.core.AbstractVerticle;
-import io.vertx.core.CompositeFuture;
 import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Future;
-import io.vertx.core.Handler;
+import io.vertx.core.MultiMap;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpHeaders;
-import io.vertx.core.http.HttpServer;
 import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.http.HttpServerResponse;
@@ -37,20 +35,22 @@ public class WebServer extends AbstractVerticle implements Function<HttpServerRe
 	private static final String PATH_JSON = "/json";
 	private static final String PATH_PSQL_DB = "/psql/db";
 
-	private static final String RESPONSE_TYPE_PLAIN = "text/plain";
-	private static final String RESPONSE_TYPE_JSON = "application/json";
+	private static final CharSequence RESPONSE_TYPE_PLAIN = HttpHeaders.createOptimized("text/plain");
+	private static final CharSequence RESPONSE_TYPE_JSON = HttpHeaders.createOptimized("application/json");
 
 	private static final String TEXT_MESSAGE = "message";
 	private static final String HELLO_WORLD = "Hello, world!";
 	private static final Buffer HELLO_WORLD_BUFFER = Buffer.buffer(HELLO_WORLD);
 
-	private static final String HEADER_SERVER = "SERVER";
-	private static final String HEADER_DATE = "DATE";
-	private static final String HEADER_CONTENT = "content-type";
+	private static final CharSequence HEADER_SERVER = HttpHeaders.createOptimized("server");
+	private static final CharSequence HEADER_DATE = HttpHeaders.createOptimized("date");
+	private static final CharSequence HEADER_CONTENT_TYPE = HttpHeaders.createOptimized("content-type");
+	private static final CharSequence HEADER_CONTENT_LENGTH = HttpHeaders.createOptimized("content-length");
 
-	private static final String SERVER = "vertx";
+	private static final CharSequence HELLO_WORLD_LENGTH = HttpHeaders.createOptimized("" + HELLO_WORLD.length());
+	private static final CharSequence SERVER = HttpHeaders.createOptimized("vert.x");
 
-	private String dateString;
+	private CharSequence dateString;
 
 	private HttpServerInternal server;
 
@@ -65,12 +65,12 @@ public class WebServer extends AbstractVerticle implements Function<HttpServerRe
 
 		server.requestHandler(WebServer.this).setPipeliningLimit(4).listen(port);
 
-		dateString = java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME.format(java.time.ZonedDateTime.now());
+		dateString = HttpHeaders.createOptimized(java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME.format(java.time.ZonedDateTime.now()));
 
 		pg = new PostgresClient(vertx, config());
 
 		vertx.setPeriodic(1000, handler -> {
-			dateString = java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME.format(java.time.ZonedDateTime.now());
+			dateString = HttpHeaders.createOptimized(java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME.format(java.time.ZonedDateTime.now()));
 		});
 	}
 
@@ -98,15 +98,25 @@ public class WebServer extends AbstractVerticle implements Function<HttpServerRe
 	}
 
 	private void handlePlainText(HttpServerRequest request) {
-		request.response()
-		.putHeader(HEADER_CONTENT, RESPONSE_TYPE_PLAIN).putHeader(HEADER_SERVER,  SERVER)
-		.putHeader(HEADER_DATE, dateString).end(HELLO_WORLD_BUFFER);
+		HttpServerResponse response = request.response();
+		MultiMap headers = response.headers();
+		headers
+				.add(HEADER_CONTENT_TYPE, RESPONSE_TYPE_PLAIN)
+				.add(HEADER_SERVER,  SERVER)
+				.add(HEADER_DATE, dateString)
+				.add(HEADER_CONTENT_LENGTH, HELLO_WORLD_LENGTH);
+		response.end(HELLO_WORLD_BUFFER);
 	}
 
 	private void handleJson(HttpServerRequest request) {
 		Buffer buff = Buffer.buffer(Json.encode(Collections.singletonMap(TEXT_MESSAGE, HELLO_WORLD)));
-		request.response().putHeader(HEADER_CONTENT, RESPONSE_TYPE_JSON).putHeader(HEADER_SERVER,  SERVER)
-		.putHeader(HEADER_DATE, dateString).end(buff);
+		HttpServerResponse response = request.response();
+		MultiMap headers = response.headers();
+		headers
+				.add(HEADER_CONTENT_TYPE, RESPONSE_TYPE_JSON)
+				.add(HEADER_SERVER,  SERVER)
+				.add(HEADER_DATE, dateString);
+		response.end(buff);
 	}
 
 	private class PostgresClient {
@@ -168,7 +178,7 @@ public class WebServer extends AbstractVerticle implements Function<HttpServerRe
 		int procs = Runtime.getRuntime().availableProcessors();
 		Vertx vertx = Vertx.vertx();
 		vertx.deployVerticle(WebServer.class.getName(), 
-				new DeploymentOptions().setInstances(procs*2).setConfig(config), event -> {
+				new DeploymentOptions().setInstances(procs * 2).setConfig(config), event -> {
 					if (event.succeeded()) {
 						logger.debug("Your Vert.x application is started!");
 					} else {
