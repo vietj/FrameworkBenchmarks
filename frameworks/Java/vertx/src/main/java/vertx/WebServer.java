@@ -1,18 +1,17 @@
 package vertx;
 
-import com.github.pgasync.ResultSet;
 import com.github.pgasync.Row;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.DeploymentOptions;
-import io.vertx.core.Future;
+import io.vertx.core.Handler;
 import io.vertx.core.MultiMap;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpHeaders;
+import io.vertx.core.http.HttpServer;
 import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.http.HttpServerResponse;
-import io.vertx.core.http.impl.HttpServerInternal;
 import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
@@ -25,9 +24,8 @@ import java.io.File;
 import java.nio.file.Files;
 import java.util.Collections;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.function.Function;
 
-public class WebServer extends AbstractVerticle implements Function<HttpServerRequest, Future<HttpServerResponse>> {
+public class WebServer extends AbstractVerticle implements Handler<HttpServerRequest> {
 
   static Logger logger = LoggerFactory.getLogger(WebServer.class.getName());
 
@@ -40,7 +38,6 @@ public class WebServer extends AbstractVerticle implements Function<HttpServerRe
   }
 
   private static final int PSQL_DB_POOL_SIZE = getIntEnv("PSQL_DB_POOL_SIZE", 4);
-  private static final int SERVER_CONCURRENCY = getIntEnv("SERVER_CONCURRENCY", 4);
 
   private static final String PATH_PLAINTEXT = "/plaintext";
   private static final String PATH_JSON = "/json";
@@ -64,15 +61,15 @@ public class WebServer extends AbstractVerticle implements Function<HttpServerRe
 
   private CharSequence dateString;
 
-  private HttpServerInternal server;
+  private HttpServer server;
 
   private PostgresClient pg;
 
   @Override
   public void start() {
     int port = 8080;
-    server = (HttpServerInternal) vertx.createHttpServer(new HttpServerOptions());
-    server.requestHandler(WebServer.this).setPipeliningLimit(SERVER_CONCURRENCY).listen(port);
+    server = vertx.createHttpServer(new HttpServerOptions());
+    server.requestHandler(WebServer.this).listen(port);
     dateString = HttpHeaders.createOptimized(java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME.format(java.time.ZonedDateTime.now()));
     pg = new PostgresClient(vertx, PSQL_DB_POOL_SIZE, config());
     vertx.setPeriodic(1000, handler -> {
@@ -81,23 +78,24 @@ public class WebServer extends AbstractVerticle implements Function<HttpServerRe
   }
 
   @Override
-  public Future<HttpServerResponse> apply(HttpServerRequest request) {
+  public void handle(HttpServerRequest request) {
     switch (request.path()) {
       case PATH_PLAINTEXT:
         handlePlainText(request);
-        return null;
+        break;
       case PATH_JSON:
         handleJson(request);
-        return null;
+        break;
       case PATH_PSQL_DB:
-        return pg.handle(request);
+        pg.handle(request);
+        break;
       case PATH_INFO:
         handleInfo(request);
-        return null;
+        break;
       default:
         request.response().setStatusCode(404);
         request.response().end();
-        return null;
+        break;
     }
   }
 
@@ -134,7 +132,6 @@ public class WebServer extends AbstractVerticle implements Function<HttpServerRe
     headers.add(HEADER_CONTENT_TYPE, RESPONSE_TYPE_JSON);
     response.end(new JsonObject()
         .put("PSQL_DB_POOL_SIZE", PSQL_DB_POOL_SIZE)
-        .put("SERVER_CONCURRENCY", SERVER_CONCURRENCY)
         .put("config", config())
         .encode());
   }
@@ -163,34 +160,26 @@ public class WebServer extends AbstractVerticle implements Function<HttpServerRe
       this.database = PgClient.create(vertx, options);
     }
 
-    final Future<HttpServerResponse> handle(HttpServerRequest req) {
-      Future<HttpServerResponse> respFut = Future.future();
-      Future<ResultSet> resFut = Future.future();
-      respFut.setHandler(ar1 -> {
-        if (ar1.succeeded()) {
-          HttpServerResponse resp = req.response();
-          resFut.setHandler(ar2 -> {
-            if (ar2.succeeded()) {
-              com.github.pgasync.ResultSet resultSet = resFut.result();
-              if (resultSet == null || resultSet.size() == 0) {
-                resp.setStatusCode(404).end();
-                return;
-              }
-              Row row = resultSet.row(0);
-              resp
-                  .putHeader(HttpHeaders.SERVER, SERVER)
-                  .putHeader(HttpHeaders.DATE, dateString)
-                  .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
-                  .end(Json.encode(new World(row.getInt(0), row.getInt(1))));
-            } else {
-              logger.error(ar2.cause());
-              resp.setStatusCode(500).end(ar2.cause().getMessage());
-            }
-          });
+    final void handle(HttpServerRequest req) {
+      HttpServerResponse resp = req.response();
+      database.query("SELECT id, randomnumber from WORLD where id = " + randomWorld(), res -> {
+        if (res.succeeded()) {
+          com.github.pgasync.ResultSet resultSet = res.result();
+          if (resultSet == null || resultSet.size() == 0) {
+            resp.setStatusCode(404).end();
+            return;
+          }
+          Row row = resultSet.row(0);
+          resp
+              .putHeader(HttpHeaders.SERVER, SERVER)
+              .putHeader(HttpHeaders.DATE, dateString)
+              .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
+              .end(Json.encode(new World(row.getInt(0), row.getInt(1))));
+        } else {
+          logger.error(res.cause());
+          resp.setStatusCode(500).end(res.cause().getMessage());
         }
       });
-      database.query("SELECT id, randomnumber from WORLD where id = " + randomWorld(), resFut);
-      return respFut;
     }
   }
 
