@@ -37,7 +37,16 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
     }
   }
 
+  private static boolean getBooleanEnv(String name, boolean def) {
+    try {
+      return Boolean.parseBoolean(System.getenv(name));
+    } catch (Exception e) {
+      return def;
+    }
+  }
+
   private static final int PSQL_DB_POOL_SIZE = getIntEnv("PSQL_DB_POOL_SIZE", 4);
+  private static final boolean PSQL_DB_PIPELINING = getBooleanEnv("PSQL_DB_POOL_SIZE", true);
 
   private static final String PATH_PLAINTEXT = "/plaintext";
   private static final String PATH_JSON = "/json";
@@ -132,6 +141,7 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
     headers.add(HEADER_CONTENT_TYPE, RESPONSE_TYPE_JSON);
     response.end(new JsonObject()
         .put("PSQL_DB_POOL_SIZE", PSQL_DB_POOL_SIZE)
+        .put("PSQL_DB_PIPELINING", PSQL_DB_PIPELINING)
         .put("config", config())
         .encode());
   }
@@ -153,6 +163,7 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
     public PostgresClient(Vertx vertx, int poolSize, JsonObject config) {
       PgClientOptions options = new PgClientOptions();
       options.setPoolsize(poolSize);
+      options.setPipelined(PSQL_DB_PIPELINING);
       options.setDatabase(config.getString("database"));
       options.setHost(config.getString("host"));
       options.setUsername(config.getString("username"));
