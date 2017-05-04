@@ -14,6 +14,7 @@ import java.nio.file.Files;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.LongAdder;
 
+import static vertx.WebServer.getBooleanEnv;
 import static vertx.WebServer.getIntEnv;
 
 /**
@@ -21,19 +22,21 @@ import static vertx.WebServer.getIntEnv;
  */
 public class DbBenchmark extends AbstractVerticle {
 
+  private static final int DB_EVENT_LOOP_SIZE = getIntEnv("DB_EVENT_LOOP_SIZE", 1);
+  private static final int DB_POOL_SIZE = getIntEnv("DB_POOL_SIZE", 1);
+  private static final boolean DB_CONN_PIPELINED = getBooleanEnv("DB_CONN_PIPELINED", false);
   private static final LongAdder count = new LongAdder();
   private static Logger logger = LoggerFactory.getLogger(DbBenchmark.class.getName());
 
   public static void main(String[] args) throws Exception {
     JsonObject config = new JsonObject(new String(Files.readAllBytes(new File(args[0]).toPath())));
     int procs = Runtime.getRuntime().availableProcessors();
-    int size = getIntEnv("NUM_INSTANCES", 1);
     Vertx vertx = Vertx.vertx();
     vertx.setPeriodic(1000, id -> {
-      System.out.println("Count = " + count.sumThenReset());
+      System.out.println("Count = " + DbBenchmark.count.sumThenReset());
     });
     vertx.deployVerticle(DbBenchmark.class.getName(),
-        new DeploymentOptions().setInstances(size).setConfig(config), event -> {
+        new DeploymentOptions().setInstances(DB_EVENT_LOOP_SIZE).setConfig(config), event -> {
           if (event.succeeded()) {
             logger.debug("Your Vert.x application is started!");
           } else {
@@ -50,8 +53,8 @@ public class DbBenchmark extends AbstractVerticle {
   public void start() throws Exception {
     JsonObject config = config();
     PgClientOptions options = new PgClientOptions();
-    options.setPoolsize(1);
-    options.setPipelined(false);
+    options.setPoolsize(DB_POOL_SIZE);
+    options.setPipelined(DB_CONN_PIPELINED);
     options.setDatabase(config.getString("database"));
     options.setHost(config.getString("host"));
     options.setUsername(config.getString("username"));
