@@ -2,7 +2,7 @@
   "connection_string": "mongodb://localhost:27017",
   "db_name": "hello_world",
 
-  "host": "127.0.0.1",
+  "host": "localhost",
   "username": "benchmarkdbuser",
   "password": "benchmarkdbpass",
   "database": "hello_world",
