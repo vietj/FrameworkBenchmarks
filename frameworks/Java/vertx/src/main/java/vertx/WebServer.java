@@ -45,6 +45,7 @@ public class WebServer extends AbstractVerticle implements Function<HttpServerRe
   private static final String PATH_PLAINTEXT = "/plaintext";
   private static final String PATH_JSON = "/json";
   private static final String PATH_PSQL_DB = "/psql/db";
+  private static final String PATH_INFO = "/info";
 
   private static final CharSequence RESPONSE_TYPE_PLAIN = HttpHeaders.createOptimized("text/plain");
   private static final CharSequence RESPONSE_TYPE_JSON = HttpHeaders.createOptimized("application/json");
@@ -90,6 +91,9 @@ public class WebServer extends AbstractVerticle implements Function<HttpServerRe
         return null;
       case PATH_PSQL_DB:
         return pg.handle(request);
+      case PATH_INFO:
+        handleInfo(request);
+        return null;
       default:
         request.response().setStatusCode(404);
         request.response().end();
@@ -122,6 +126,17 @@ public class WebServer extends AbstractVerticle implements Function<HttpServerRe
         .add(HEADER_SERVER, SERVER)
         .add(HEADER_DATE, dateString);
     response.end(buff);
+  }
+
+  private void handleInfo(HttpServerRequest request) {
+    HttpServerResponse response = request.response();
+    MultiMap headers = response.headers();
+    headers.add(HEADER_CONTENT_TYPE, RESPONSE_TYPE_JSON);
+    response.end(new JsonObject()
+        .put("PSQL_DB_POOL_SIZE", PSQL_DB_POOL_SIZE)
+        .put("SERVER_CONCURRENCY", SERVER_CONCURRENCY)
+        .put("config", config())
+        .encode());
   }
 
   private class PostgresClient {
@@ -168,6 +183,7 @@ public class WebServer extends AbstractVerticle implements Function<HttpServerRe
                   .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
                   .end(Json.encode(new World(row.getInt(0), row.getInt(1))));
             } else {
+              logger.error(ar2.cause());
               resp.setStatusCode(500).end(ar2.cause().getMessage());
             }
           });
