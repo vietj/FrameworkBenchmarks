@@ -48,6 +48,7 @@ public class DbBenchmark extends AbstractVerticle {
   private PgClient client;
   private int maxInFlight = 128;
   private int inflight = 0;
+  private long random = 0;
 
   @Override
   public void start() throws Exception {
@@ -78,6 +79,6 @@ public class DbBenchmark extends AbstractVerticle {
   }
 
   int randomWorld() {
-    return 1 + ThreadLocalRandom.current().nextInt(10000);
+    return (int) ((random += 4) % 10000);
   }
 }
