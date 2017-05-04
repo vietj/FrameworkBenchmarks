@@ -29,7 +29,7 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
 
   static Logger logger = LoggerFactory.getLogger(WebServer.class.getName());
 
-  private static int getIntEnv(String name, int def) {
+  static int getIntEnv(String name, int def) {
     try {
       return Integer.parseInt(System.getenv(name));
     } catch (Exception e) {
@@ -37,7 +37,7 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
     }
   }
 
-  private static boolean getBooleanEnv(String name, boolean def) {
+  static boolean getBooleanEnv(String name, boolean def) {
     try {
       return Boolean.parseBoolean(System.getenv(name));
     } catch (Exception e) {

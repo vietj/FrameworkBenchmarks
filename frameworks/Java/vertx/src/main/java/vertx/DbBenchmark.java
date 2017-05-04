@@ -12,20 +12,28 @@ import io.vertx.pgclient.PgClientOptions;
 import java.io.File;
 import java.nio.file.Files;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.LongAdder;
+
+import static vertx.WebServer.getIntEnv;
 
 /**
  * @author <a href="mailto:julien@julienviet.com">Julien Viet</a>
  */
 public class DbBenchmark extends AbstractVerticle {
 
-  static Logger logger = LoggerFactory.getLogger(DbBenchmark.class.getName());
+  private static final LongAdder count = new LongAdder();
+  private static Logger logger = LoggerFactory.getLogger(DbBenchmark.class.getName());
 
   public static void main(String[] args) throws Exception {
     JsonObject config = new JsonObject(new String(Files.readAllBytes(new File(args[0]).toPath())));
     int procs = Runtime.getRuntime().availableProcessors();
+    int size = getIntEnv("NUM_INSTANCES", 1);
     Vertx vertx = Vertx.vertx();
+    vertx.setPeriodic(1000, id -> {
+      System.out.println("Count = " + count.sumThenReset());
+    });
     vertx.deployVerticle(DbBenchmark.class.getName(),
-        new DeploymentOptions().setInstances(1).setConfig(config), event -> {
+        new DeploymentOptions().setInstances(size).setConfig(config), event -> {
           if (event.succeeded()) {
             logger.debug("Your Vert.x application is started!");
           } else {
@@ -37,7 +45,6 @@ public class DbBenchmark extends AbstractVerticle {
   private PgClient client;
   private int maxInFlight = 128;
   private int inflight = 0;
-  private int count = 0;
 
   @Override
   public void start() throws Exception {
@@ -51,16 +58,12 @@ public class DbBenchmark extends AbstractVerticle {
     options.setPassword(config.getString("password"));
     client = PgClient.create(vertx, options);
     run();
-    vertx.setPeriodic(1000, id -> {
-      System.out.println("count " + count);
-      count = 0;
-    });
   }
 
   private void run() {
     while (inflight < maxInFlight) {
       inflight++;
-      count++;
+      count.add(1);
       client.query("SELECT id, randomnumber from WORLD where id = " + randomWorld(), res -> {
         inflight--;
         run();
