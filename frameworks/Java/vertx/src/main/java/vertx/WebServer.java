@@ -168,7 +168,7 @@ public class WebServer extends AbstractVerticle implements Function<HttpServerRe
                   .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
                   .end(Json.encode(new World(row.getInt(0), row.getInt(1))));
             } else {
-              resp.setStatusCode(500).end(ar1.cause().getMessage());
+              resp.setStatusCode(500).end(ar2.cause().getMessage());
             }
           });
         }
