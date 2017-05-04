@@ -39,7 +39,7 @@ public class WebServer extends AbstractVerticle implements Function<HttpServerRe
     }
   }
 
-  private static final int PSQL_DB_POOL_SIZE = getIntEnv("PSQL_DB_POOL_SIZE", 2);
+  private static final int PSQL_DB_POOL_SIZE = getIntEnv("PSQL_DB_POOL_SIZE", 4);
   private static final int SERVER_CONCURRENCY = getIntEnv("SERVER_CONCURRENCY", 4);
 
   private static final String PATH_PLAINTEXT = "/plaintext";
