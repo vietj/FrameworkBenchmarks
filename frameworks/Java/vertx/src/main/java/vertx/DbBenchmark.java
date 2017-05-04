@@ -22,6 +22,7 @@ import static vertx.WebServer.getIntEnv;
  */
 public class DbBenchmark extends AbstractVerticle {
 
+  private static final int DB_MAX_INFLIGHT = getIntEnv("DB_MAX_INFLIGHT", 128);
   private static final int DB_EVENT_LOOP_SIZE = getIntEnv("DB_EVENT_LOOP_SIZE", 1);
   private static final int DB_POOL_SIZE = getIntEnv("DB_POOL_SIZE", 1);
   private static final boolean DB_CONN_PIPELINED = getBooleanEnv("DB_CONN_PIPELINED", false);
@@ -46,7 +47,6 @@ public class DbBenchmark extends AbstractVerticle {
   }
 
   private PgClient client;
-  private int maxInFlight = 128;
   private int inflight = 0;
   private long random = 0;
 
@@ -65,7 +65,7 @@ public class DbBenchmark extends AbstractVerticle {
   }
 
   private void run() {
-    while (inflight < maxInFlight) {
+    while (inflight < DB_MAX_INFLIGHT) {
       inflight++;
       count.add(1);
       client.query("SELECT id, randomnumber from WORLD where id = " + randomWorld(), res -> {
