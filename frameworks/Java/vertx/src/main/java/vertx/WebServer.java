@@ -31,6 +31,17 @@ public class WebServer extends AbstractVerticle implements Function<HttpServerRe
 
   static Logger logger = LoggerFactory.getLogger(WebServer.class.getName());
 
+  private static int getIntEnv(String name, int def) {
+    try {
+      return Integer.parseInt(System.getenv(name));
+    } catch (Exception e) {
+      return def;
+    }
+  }
+
+  private static final int PSQL_DB_POOL_SIZE = getIntEnv("PSQL_DB_POOL_SIZE", 2);
+  private static final int SERVER_CONCURRENCY = getIntEnv("SERVER_CONCURRENCY", 4);
+
   private static final String PATH_PLAINTEXT = "/plaintext";
   private static final String PATH_JSON = "/json";
   private static final String PATH_PSQL_DB = "/psql/db";
@@ -58,17 +69,11 @@ public class WebServer extends AbstractVerticle implements Function<HttpServerRe
 
   @Override
   public void start() {
-
     int port = 8080;
-
     server = (HttpServerInternal) vertx.createHttpServer(new HttpServerOptions());
-
-    server.requestHandler(WebServer.this).setPipeliningLimit(4).listen(port);
-
+    server.requestHandler(WebServer.this).setPipeliningLimit(SERVER_CONCURRENCY).listen(port);
     dateString = HttpHeaders.createOptimized(java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME.format(java.time.ZonedDateTime.now()));
-
-    pg = new PostgresClient(vertx, config());
-
+    pg = new PostgresClient(vertx, PSQL_DB_POOL_SIZE, config());
     vertx.setPeriodic(1000, handler -> {
       dateString = HttpHeaders.createOptimized(java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME.format(java.time.ZonedDateTime.now()));
     });
@@ -133,9 +138,9 @@ public class WebServer extends AbstractVerticle implements Function<HttpServerRe
 
     private final PgClient database;
 
-    public PostgresClient(Vertx vertx, JsonObject config) {
+    public PostgresClient(Vertx vertx, int poolSize, JsonObject config) {
       PgClientOptions options = new PgClientOptions();
-      options.setPoolsize(2); // 2 ?
+      options.setPoolsize(poolSize);
       options.setDatabase(config.getString("database"));
       options.setHost(config.getString("host"));
       options.setUsername(config.getString("username"));
