@@ -122,7 +122,7 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
       if (ar.succeeded()) {
         pool = ar.result();
       }
-      startFuture.fail(ar.cause());
+      startFuture.handle(ar.mapEmpty());
     });
   }
 
