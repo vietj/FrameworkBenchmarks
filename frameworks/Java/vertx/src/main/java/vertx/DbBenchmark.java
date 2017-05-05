@@ -8,6 +8,9 @@ import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.pgclient.PgClient;
 import io.vertx.pgclient.PgClientOptions;
+import io.vertx.pgclient.PostgresClient;
+import io.vertx.pgclient.PostgresClientOptions;
+import io.vertx.pgclient.PostgresConnection;
 
 import java.io.File;
 import java.nio.file.Files;
@@ -46,31 +49,35 @@ public class DbBenchmark extends AbstractVerticle {
         });
   }
 
-  private PgClient client;
   private int inflight = 0;
   private long random = 0;
 
   @Override
   public void start() throws Exception {
     JsonObject config = config();
-    PgClientOptions options = new PgClientOptions();
-    options.setPoolsize(DB_POOL_SIZE);
-    options.setPipelined(DB_CONN_PIPELINED);
+    PostgresClientOptions options = new PostgresClientOptions();
     options.setDatabase(config.getString("database"));
     options.setHost(config.getString("host"));
     options.setUsername(config.getString("username"));
     options.setPassword(config.getString("password"));
-    client = PgClient.create(vertx, options);
-    run();
+    options.setPipeliningLimit(DB_MAX_INFLIGHT);
+    PostgresClient client = PostgresClient.create(vertx, options);
+    client.connect(ar -> {
+      if (ar.succeeded()) {
+        run(ar.result());
+      } else {
+        logger.error(ar.cause());
+      }
+    });
   }
 
-  private void run() {
+  private void run(PostgresConnection conn) {
     while (inflight < DB_MAX_INFLIGHT) {
       inflight++;
       count.add(1);
-      client.query("SELECT id, randomnumber from WORLD where id = " + randomWorld(), res -> {
+      conn.execute("SELECT id, randomnumber from WORLD where id = " + randomWorld(), res -> {
         inflight--;
-        run();
+        run(conn);
         if (res.failed()) {
           logger.error(res.cause());
         }
