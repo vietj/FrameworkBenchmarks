@@ -1,7 +1,6 @@
 package vertx;
 
 import io.vertx.core.AbstractVerticle;
-import io.vertx.core.AsyncResult;
 import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
@@ -14,6 +13,7 @@ import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.http.HttpServerResponse;
 import io.vertx.core.json.Json;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
@@ -30,6 +30,27 @@ import java.util.Collections;
 import java.util.concurrent.ThreadLocalRandom;
 
 public class WebServer extends AbstractVerticle implements Handler<HttpServerRequest> {
+
+  /**
+   * Returns the value of the "queries" getRequest parameter, which is an integer
+   * bound between 1 and 500 with a default value of 1.
+   *
+   * @param request the current HTTP request
+   * @return the value of the "queries" parameter
+   */
+  static int getQueries(HttpServerRequest request) {
+    String param = request.getParam("queries");
+
+    if (param == null) {
+      return 1;
+    }
+    try {
+      int parsedValue = Integer.parseInt(param);
+      return Math.min(500, Math.max(1, parsedValue));
+    } catch (NumberFormatException e) {
+      return 1;
+    }
+  }
 
   static Logger logger = LoggerFactory.getLogger(WebServer.class.getName());
 
@@ -54,7 +75,8 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
 
   private static final String PATH_PLAINTEXT = "/plaintext";
   private static final String PATH_JSON = "/json";
-  private static final String PATH_PSQL_DB = "/psql/db";
+  private static final String PATH_DB = "/db";
+  private static final String PATH_QUERIES = "/queries";
   private static final String PATH_INFO = "/info";
 
   private static final CharSequence RESPONSE_TYPE_PLAIN = HttpHeaders.createOptimized("text/plain");
@@ -76,7 +98,8 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
 
   private HttpServer server;
 
-  private Benchmark pg;
+  private PostgresClient client;
+  private PostgresConnectionPool pool;
 
   @Override
   public void start(Future<Void> startFuture) throws Exception {
@@ -84,11 +107,23 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
     server = vertx.createHttpServer(new HttpServerOptions());
     server.requestHandler(WebServer.this).listen(port);
     dateString = HttpHeaders.createOptimized(java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME.format(java.time.ZonedDateTime.now()));
-    pg = new Benchmark(vertx, PSQL_DB_POOL_SIZE, config());
+    JsonObject config = config();
     vertx.setPeriodic(1000, handler -> {
       dateString = HttpHeaders.createOptimized(java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME.format(java.time.ZonedDateTime.now()));
     });
-    pg.start(startFuture);
+    PostgresClientOptions options = new PostgresClientOptions();
+    options.setDatabase(config.getString("database"));
+    options.setHost(config.getString("host"));
+    options.setUsername(config.getString("username"));
+    options.setPassword(config.getString("password"));
+    options.setPipeliningLimit(PSQL_DB_PIPELINING_LIMIT);
+    client = PostgresClient.create(vertx, options);
+    client.createPool(PSQL_DB_POOL_SIZE, ar -> {
+      if (ar.succeeded()) {
+        pool = ar.result();
+      }
+      startFuture.fail(ar.cause());
+    });
   }
 
   @Override
@@ -100,8 +135,11 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
       case PATH_JSON:
         handleJson(request);
         break;
-      case PATH_PSQL_DB:
-        pg.handle(request);
+      case PATH_DB:
+        handleDb(request);
+        break;
+      case PATH_QUERIES:
+        new Queries().handle(request);
         break;
       case PATH_INFO:
         handleInfo(request);
@@ -140,6 +178,75 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
     response.end(buff);
   }
 
+  /**
+   * Returns a random integer that is a suitable value for both the {@code id}
+   * and {@code randomNumber} properties of a world object.
+   *
+   * @return a random world number
+   */
+  private static int randomWorld() {
+    return 1 + ThreadLocalRandom.current().nextInt(10000);
+  }
+
+  private void handleDb(HttpServerRequest req) {
+    HttpServerResponse resp = req.response();
+    pool.execute("SELECT id, randomnumber from WORLD where id = " + randomWorld(), res -> {
+      if (res.succeeded()) {
+        Result resultSet = res.result();
+        if (resultSet == null || resultSet.size() == 0) {
+          resp.setStatusCode(404).end();
+          return;
+        }
+        Row row = resultSet.get(0);
+        resp
+            .putHeader(HttpHeaders.SERVER, SERVER)
+            .putHeader(HttpHeaders.DATE, dateString)
+            .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
+            .end(Json.encode(new World((Integer)row.get(0), (Integer) row.get(1))));
+      } else {
+        logger.error(res.cause());
+        resp.setStatusCode(500).end(res.cause().getMessage());
+      }
+    });
+  }
+
+  class Queries {
+
+    boolean failed;
+    JsonArray worlds = new JsonArray();
+
+    public void handle(HttpServerRequest req) {
+      HttpServerResponse resp = req.response();
+      final int queries = getQueries(req);
+
+      for (int i = 0; i < queries; i++) {
+        pool.execute("SELECT id, randomnumber from WORLD where id = " + randomWorld(), query -> {
+          if (!failed) {
+            if (query.failed()) {
+              failed = true;
+              resp.setStatusCode(500).end(query.cause().getMessage());
+              return;
+            }
+
+            // we need a final reference
+            final Row row = query.result().get(0);
+            worlds.add(new JsonObject().put("id", "" + row.get(0)).put("randomNumber", "" + row.get(1)));
+
+            // stop condition
+            if (worlds.size() == queries) {
+              resp
+                  .putHeader(HttpHeaders.SERVER, SERVER)
+                  .putHeader(HttpHeaders.DATE, dateString)
+                  .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
+                  .end(Json.encode(worlds.encode()));
+            }
+          }
+        });
+      }
+    }
+
+  }
+
   private void handleInfo(HttpServerRequest request) {
     HttpServerResponse response = request.response();
     MultiMap headers = response.headers();
@@ -148,65 +255,6 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
         .put("PSQL_DB_POOL_SIZE", PSQL_DB_POOL_SIZE)
         .put("config", config())
         .encode());
-  }
-
-  private class Benchmark {
-
-    /**
-     * Returns a random integer that is a suitable value for both the {@code id}
-     * and {@code randomNumber} properties of a world object.
-     *
-     * @return a random world number
-     */
-    int randomWorld() {
-      return 1 + ThreadLocalRandom.current().nextInt(10000);
-    }
-
-    private final PostgresClient database;
-    private final int poolSize;
-    private PostgresConnectionPool pool;
-
-    public Benchmark(Vertx vertx, int poolSize, JsonObject config) {
-      PostgresClientOptions options = new PostgresClientOptions();
-      options.setDatabase(config.getString("database"));
-      options.setHost(config.getString("host"));
-      options.setUsername(config.getString("username"));
-      options.setPassword(config.getString("password"));
-      options.setPipeliningLimit(PSQL_DB_PIPELINING_LIMIT);
-      this.database = PostgresClient.create(vertx, options);
-      this.poolSize = poolSize;
-    }
-
-    void start(Handler<AsyncResult<Void>> completionHandler) {
-      database.createPool(poolSize, ar -> {
-        if (ar.succeeded()) {
-          pool = ar.result();
-        }
-        completionHandler.handle(ar.mapEmpty());
-      });
-    }
-
-    final void handle(HttpServerRequest req) {
-      HttpServerResponse resp = req.response();
-      pool.execute("SELECT id, randomnumber from WORLD where id = " + randomWorld(), res -> {
-        if (res.succeeded()) {
-          Result resultSet = res.result();
-          if (resultSet == null || resultSet.size() == 0) {
-            resp.setStatusCode(404).end();
-            return;
-          }
-          Row row = resultSet.get(0);
-          resp
-              .putHeader(HttpHeaders.SERVER, SERVER)
-              .putHeader(HttpHeaders.DATE, dateString)
-              .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
-              .end(Json.encode(new World((Integer)row.get(0), (Integer) row.get(1))));
-        } else {
-          logger.error(res.cause());
-          resp.setStatusCode(500).end(res.cause().getMessage());
-        }
-      });
-    }
   }
 
   public static void main(String[] args) throws Exception {
