@@ -1,8 +1,9 @@
 package vertx;
 
-import com.github.pgasync.Row;
 import io.vertx.core.AbstractVerticle;
+import io.vertx.core.AsyncResult;
 import io.vertx.core.DeploymentOptions;
+import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.MultiMap;
 import io.vertx.core.Vertx;
@@ -16,8 +17,11 @@ import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
-import io.vertx.pgclient.PgClient;
-import io.vertx.pgclient.PgClientOptions;
+import io.vertx.pgclient.PostgresClient;
+import io.vertx.pgclient.PostgresClientOptions;
+import io.vertx.pgclient.PostgresConnectionPool;
+import io.vertx.pgclient.Result;
+import io.vertx.pgclient.Row;
 import vertx.model.World;
 
 import java.io.File;
@@ -45,8 +49,7 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
     }
   }
 
-  private static final int PSQL_DB_POOL_SIZE = getIntEnv("PSQL_DB_POOL_SIZE", 4);
-  private static final boolean PSQL_DB_PIPELINING = getBooleanEnv("PSQL_DB_POOL_SIZE", true);
+  private static final int PSQL_DB_POOL_SIZE = getIntEnv("PSQL_DB_POOL_SIZE", 2);
 
   private static final String PATH_PLAINTEXT = "/plaintext";
   private static final String PATH_JSON = "/json";
@@ -72,18 +75,19 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
 
   private HttpServer server;
 
-  private PostgresClient pg;
+  private Benchmark pg;
 
   @Override
-  public void start() {
+  public void start(Future<Void> startFuture) throws Exception {
     int port = 8080;
     server = vertx.createHttpServer(new HttpServerOptions());
     server.requestHandler(WebServer.this).listen(port);
     dateString = HttpHeaders.createOptimized(java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME.format(java.time.ZonedDateTime.now()));
-    pg = new PostgresClient(vertx, PSQL_DB_POOL_SIZE, config());
+    pg = new Benchmark(vertx, PSQL_DB_POOL_SIZE, config());
     vertx.setPeriodic(1000, handler -> {
       dateString = HttpHeaders.createOptimized(java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME.format(java.time.ZonedDateTime.now()));
     });
+    pg.start(startFuture);
   }
 
   @Override
@@ -141,12 +145,11 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
     headers.add(HEADER_CONTENT_TYPE, RESPONSE_TYPE_JSON);
     response.end(new JsonObject()
         .put("PSQL_DB_POOL_SIZE", PSQL_DB_POOL_SIZE)
-        .put("PSQL_DB_PIPELINING", PSQL_DB_PIPELINING)
         .put("config", config())
         .encode());
   }
 
-  private class PostgresClient {
+  private class Benchmark {
 
     /**
      * Returns a random integer that is a suitable value for both the {@code id}
@@ -158,34 +161,44 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
       return 1 + ThreadLocalRandom.current().nextInt(10000);
     }
 
-    private final PgClient database;
+    private final PostgresClient database;
+    private final int poolSize;
+    private PostgresConnectionPool pool;
 
-    public PostgresClient(Vertx vertx, int poolSize, JsonObject config) {
-      PgClientOptions options = new PgClientOptions();
-      options.setPoolsize(poolSize);
-      options.setPipelined(PSQL_DB_PIPELINING);
+    public Benchmark(Vertx vertx, int poolSize, JsonObject config) {
+      PostgresClientOptions options = new PostgresClientOptions();
       options.setDatabase(config.getString("database"));
       options.setHost(config.getString("host"));
       options.setUsername(config.getString("username"));
       options.setPassword(config.getString("password"));
-      this.database = PgClient.create(vertx, options);
+      this.database = PostgresClient.create(vertx, options);
+      this.poolSize = poolSize;
+    }
+
+    void start(Handler<AsyncResult<Void>> completionHandler) {
+      database.createPool(poolSize, ar -> {
+        if (ar.succeeded()) {
+          pool = ar.result();
+        }
+        completionHandler.handle(ar.mapEmpty());
+      });
     }
 
     final void handle(HttpServerRequest req) {
       HttpServerResponse resp = req.response();
-      database.query("SELECT id, randomnumber from WORLD where id = " + randomWorld(), res -> {
+      pool.execute("SELECT id, randomnumber from WORLD where id = " + randomWorld(), res -> {
         if (res.succeeded()) {
-          com.github.pgasync.ResultSet resultSet = res.result();
+          Result resultSet = res.result();
           if (resultSet == null || resultSet.size() == 0) {
             resp.setStatusCode(404).end();
             return;
           }
-          Row row = resultSet.row(0);
+          Row row = resultSet.get(0);
           resp
               .putHeader(HttpHeaders.SERVER, SERVER)
               .putHeader(HttpHeaders.DATE, dateString)
               .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
-              .end(Json.encode(new World(row.getInt(0), row.getInt(1))));
+              .end(Json.encode(new World((Integer)row.get(0), (Integer) row.get(1))));
         } else {
           logger.error(res.cause());
           resp.setStatusCode(500).end(res.cause().getMessage());
