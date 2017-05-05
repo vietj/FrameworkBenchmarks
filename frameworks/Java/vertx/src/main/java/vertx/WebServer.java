@@ -49,7 +49,8 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
     }
   }
 
-  private static final int PSQL_DB_POOL_SIZE = getIntEnv("PSQL_DB_POOL_SIZE", 2);
+  private static final int PSQL_DB_POOL_SIZE = getIntEnv("PSQL_DB_POOL_SIZE", 1);
+  private static final int PSQL_DB_PIPELINING_LIMIT = getIntEnv("PSQL_DB_PIPELINING_LIMIT", 256);
 
   private static final String PATH_PLAINTEXT = "/plaintext";
   private static final String PATH_JSON = "/json";
@@ -171,6 +172,7 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
       options.setHost(config.getString("host"));
       options.setUsername(config.getString("username"));
       options.setPassword(config.getString("password"));
+      options.setPipeliningLimit(PSQL_DB_PIPELINING_LIMIT);
       this.database = PostgresClient.create(vertx, options);
       this.poolSize = poolSize;
     }
