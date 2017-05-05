@@ -25,6 +25,7 @@ import static vertx.WebServer.getIntEnv;
  */
 public class DbBenchmark extends AbstractVerticle {
 
+  private static final int DB_CONN_PER_EVENT_LOOP = getIntEnv("DB_CONN_PER_EVENT_LOOP", 1);
   private static final int DB_MAX_INFLIGHT = getIntEnv("DB_MAX_INFLIGHT", 128);
   private static final int DB_EVENT_LOOP_SIZE = getIntEnv("DB_EVENT_LOOP_SIZE", 1);
   private static final int DB_POOL_SIZE = getIntEnv("DB_POOL_SIZE", 1);
@@ -51,7 +52,7 @@ public class DbBenchmark extends AbstractVerticle {
         });
   }
 
-  private int inflight = 0;
+  private int[] inflight = new int[DB_CONN_PER_EVENT_LOOP];
   private long random = 0;
 
   @Override
@@ -72,22 +73,25 @@ public class DbBenchmark extends AbstractVerticle {
     }
 
     PostgresClient client = PostgresClient.create(vertx, options);
-    client.connect(ar -> {
-      if (ar.succeeded()) {
-        run(ar.result());
-      } else {
-        logger.error(ar.cause());
-      }
-    });
+    for (int i = 0;i < DB_CONN_PER_EVENT_LOOP;i++) {
+      int index = i;
+      client.connect(ar -> {
+        if (ar.succeeded()) {
+          run(ar.result(), index);
+        } else {
+          logger.error(ar.cause());
+        }
+      });
+    }
   }
 
-  private void run(PostgresConnection conn) {
-    while (inflight < DB_MAX_INFLIGHT) {
-      inflight++;
+  private void run(PostgresConnection conn, int index) {
+    while (inflight[index] < DB_MAX_INFLIGHT) {
+      inflight[index]++;
       count.add(1);
       conn.execute("SELECT id, randomnumber from WORLD where id = " + randomWorld(), res -> {
-        inflight--;
-        run(conn);
+        inflight[index]--;
+        run(conn, index);
         if (res.failed()) {
           logger.error(res.cause());
         }
