@@ -29,6 +29,8 @@ public class DbBenchmark extends AbstractVerticle {
   private static final int DB_EVENT_LOOP_SIZE = getIntEnv("DB_EVENT_LOOP_SIZE", 1);
   private static final int DB_POOL_SIZE = getIntEnv("DB_POOL_SIZE", 1);
   private static final boolean DB_CONN_PIPELINED = getBooleanEnv("DB_CONN_PIPELINED", false);
+  private static final int SEND_BUFFER_SIZE = getIntEnv("SEND_BUFFER_SIZE", -1);
+  private static final int RECEIVE_BUFFER_SIZE = getIntEnv("RECEIVE_BUFFER_SIZE", -1);
   private static final LongAdder count = new LongAdder();
   private static Logger logger = LoggerFactory.getLogger(DbBenchmark.class.getName());
 
@@ -61,6 +63,14 @@ public class DbBenchmark extends AbstractVerticle {
     options.setUsername(config.getString("username"));
     options.setPassword(config.getString("password"));
     options.setPipeliningLimit(DB_MAX_INFLIGHT);
+
+    if (SEND_BUFFER_SIZE > 0) {
+      options.setSendBufferSize(SEND_BUFFER_SIZE);
+    }
+    if (RECEIVE_BUFFER_SIZE > 0) {
+      options.setReceiveBufferSize(RECEIVE_BUFFER_SIZE);
+    }
+
     PostgresClient client = PostgresClient.create(vertx, options);
     client.connect(ar -> {
       if (ar.succeeded()) {
