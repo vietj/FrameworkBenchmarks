@@ -275,51 +275,64 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
       HttpServerResponse resp = req.response();
       final int queries = getQueries(req);
 
-      pool.getConnection(ar -> {
-        if (ar.succeeded()) {
-          PostgresConnection conn = ar.result();
-          for (int i = 0; i < queries; i++) {
-            int id = randomWorld();
-            conn.execute("SELECT id, randomnumber from WORLD where id = " + id, query -> {
-              if (!failed) {
-                if (query.failed()) {
-                  failed = true;
-                  resp.setStatusCode(500).end(query.cause().getMessage());
-                  conn.close();
-                  return;
-                }
-
-                int randomNumber = randomWorld();
-
-                conn.execute("UPDATE world SET randomnumber = " + randomNumber + " WHERE id = " + id, update -> {
+      pool.getConnection(ar1 -> {
+        if (ar1.succeeded()) {
+          PostgresConnection conn = ar1.result();
+          conn.execute("BEGIN", ar2 -> {
+            if (ar2.succeeded()) {
+              for (int i = 0; i < queries; i++) {
+                int id = randomWorld();
+                conn.execute("SELECT id, randomnumber from WORLD where id = " + id, ar3 -> {
                   if (!failed) {
-                    if (update.failed()) {
+                    if (ar3.failed()) {
                       failed = true;
-                      resp.setStatusCode(500).end(query.cause().getMessage());
+                      resp.setStatusCode(500).end(ar3.cause().getMessage());
                       conn.close();
                       return;
                     }
-                  }
 
-                  // we need a final reference
-                  Row row = query.result().get(0);
-                  worlds.add(new JsonObject().put("id", "" + row.get(0)).put("randomNumber", "" + randomNumber));
+                    int randomNumber = randomWorld();
 
-                  // stop condition
-                  if (worlds.size() == queries) {
-                    conn.close();
-                    resp
-                        .putHeader(HttpHeaders.SERVER, SERVER)
-                        .putHeader(HttpHeaders.DATE, dateString)
-                        .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
-                        .end(Json.encode(worlds.encode()));
+                    conn.execute("UPDATE world SET randomnumber = " + randomNumber + " WHERE id = " + id, ar4 -> {
+                      if (!failed) {
+                        if (ar4.failed()) {
+                          failed = true;
+                          resp.setStatusCode(500).end(ar4.cause().getMessage());
+                          conn.close();
+                          return;
+                        }
+                      }
+
+                      // we need a final reference
+                      Row row = ar3.result().get(0);
+                      worlds.add(new JsonObject().put("id", "" + row.get(0)).put("randomNumber", "" + randomNumber));
+
+                      // stop condition
+                      if (worlds.size() == queries) {
+                        conn.execute("COMMIT", ar5 -> {
+                          conn.close();
+                          if (ar5.succeeded()) {
+                            resp
+                                .putHeader(HttpHeaders.SERVER, SERVER)
+                                .putHeader(HttpHeaders.DATE, dateString)
+                                .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
+                                .end(Json.encode(worlds.encode()));
+                          } else {
+                            resp.setStatusCode(500).end(ar5.cause().getMessage());
+                          }
+                        });
+                      }
+                    });
                   }
                 });
               }
-            });
-          }
+            } else {
+              conn.close();
+              resp.setStatusCode(500).end(ar1.cause().getMessage());
+            }
+          });
         } else {
-          resp.setStatusCode(500).end(ar.cause().getMessage());
+          resp.setStatusCode(500).end(ar1.cause().getMessage());
         }
       });
     }
