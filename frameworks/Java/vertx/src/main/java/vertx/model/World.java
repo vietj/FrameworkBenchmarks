@@ -3,7 +3,7 @@ package vertx.model;
 /**
  * The model for the "world" database table.
  */
-public final class World {
+public final class World implements Comparable<World> {
 
   private final int id;
   private final int randomNumber;
@@ -25,5 +25,10 @@ public final class World {
 
   public int getRandomNumber() {
     return randomNumber;
+  }
+
+  @Override
+  public int compareTo(World o) {
+    return Integer.compare(id, o.id);
   }
 }

@@ -27,7 +27,9 @@ import vertx.model.World;
 
 import java.io.File;
 import java.nio.file.Files;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.concurrent.ThreadLocalRandom;
 
 public class WebServer extends AbstractVerticle implements Handler<HttpServerRequest> {
@@ -270,26 +272,23 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
 
     final HttpServerRequest request;
     boolean failed;
-    JsonArray worlds = new JsonArray();
     PostgresConnection conn;
+    int queryCount;
+    final World[] worlds;
 
     public Update(HttpServerRequest request) {
+      final int queries = getQueries(request);
       this.request = request;
+      this.worlds = new World[queries];
     }
 
     public void handle() {
-      final int queries = getQueries(request);
-
       pool.getConnection(ar1 -> {
         if (ar1.succeeded()) {
           conn = ar1.result();
-
-          int[] ids = new int[queries];
-          Row[] rows = new Row[queries];
-          for (int i = 0; i < queries; i++) {
-            int index = i;
+          for (int i = 0; i < worlds.length; i++) {
             int id = randomWorld();
-            ids[i] = id;
+            int index = i;
             conn.execute("SELECT id, randomnumber from WORLD where id = " + id, ar2 -> {
               if (!failed) {
                 if (ar2.failed()) {
@@ -297,54 +296,57 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
                   sendError(ar2.cause());
                   return;
                 }
-                rows[index] = ar2.result().get(0);
+                worlds[index] = new World((Integer) ar2.result().get(0).get(0), randomWorld());
+                if (++queryCount == worlds.length) {
+                  handleUpdates();
+                }
+              }
+            });
+          }
+        } else {
+          sendError(ar1.cause());
+        }
+      });
+    }
+
+    void handleUpdates() {
+      Arrays.sort(worlds);
+      conn.execute("BEGIN", ar3 -> {
+        if (!failed) {
+          if (ar3.failed()) {
+            failed = true;
+            sendError(ar3.cause());
+          }
+          JsonArray json = new JsonArray();
+          for (int i = 0;i < worlds.length;i++) {
+            World world = worlds[i];
+            conn.execute("UPDATE world SET randomnumber = " + world.getRandomNumber() + " WHERE id = " + world.getId(), ar4 -> {
+              if (!failed) {
+                if (ar4.failed()) {
+                  failed = true;
+                  sendError(ar4.cause());
+                  return;
+                }
+                json.add(new JsonObject().put("id", "" + world.getId()).put("randomNumber", "" + world.getRandomNumber()));
               }
             });
           }
 
-          conn.execute("BEGIN", ar3 -> {
+          conn.execute("COMMIT", ar5 -> {
             if (!failed) {
-              if (ar3.failed()) {
+              if (ar5.failed()) {
                 failed = true;
-                sendError(ar3.cause());
+                sendError(ar5.cause());
+                return;
               }
-
-              for (int i = 0;i < queries;i++) {
-                int index = i;
-                int randomNumber = randomWorld();
-
-                conn.execute("UPDATE world SET randomnumber = " + randomNumber + " WHERE id = " + ids[i], ar4 -> {
-                  if (!failed) {
-                    if (ar4.failed()) {
-                      failed = true;
-                      sendError(ar4.cause());
-                      return;
-                    }
-                    Row row = rows[index];
-                    worlds.add(new JsonObject().put("id", "" + row.get(0)).put("randomNumber", "" + randomNumber));
-                  }
-                });
-              }
-
-              conn.execute("COMMIT", ar5 -> {
-                if (!failed) {
-                  if (ar5.failed()) {
-                    failed = true;
-                    sendError(ar5.cause());
-                    return;
-                  }
-                  conn.close();
-                  request.response()
-                      .putHeader(HttpHeaders.SERVER, SERVER)
-                      .putHeader(HttpHeaders.DATE, dateString)
-                      .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
-                      .end(Json.encode(worlds.encode()));
-                }
-              });
+              conn.close();
+              request.response()
+                  .putHeader(HttpHeaders.SERVER, SERVER)
+                  .putHeader(HttpHeaders.DATE, dateString)
+                  .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
+                  .end(Json.encode(json.encode()));
             }
           });
-        } else {
-          sendError(ar1.cause());
         }
       });
     }
