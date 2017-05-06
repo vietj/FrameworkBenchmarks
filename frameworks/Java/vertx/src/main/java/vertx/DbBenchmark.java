@@ -6,8 +6,6 @@ import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
-import io.vertx.pgclient.PgClient;
-import io.vertx.pgclient.PgClientOptions;
 import io.vertx.pgclient.PostgresClient;
 import io.vertx.pgclient.PostgresClientOptions;
 import io.vertx.pgclient.PostgresConnection;
@@ -15,7 +13,6 @@ import io.vertx.pgclient.PostgresConnectionPool;
 
 import java.io.File;
 import java.nio.file.Files;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.LongAdder;
 
 import static vertx.WebServer.getBooleanEnv;
@@ -74,24 +71,26 @@ public class DbBenchmark extends AbstractVerticle {
     }
 
     PostgresClient client = PostgresClient.create(vertx, options);
-    client.createPool(DB_CONN_PER_EVENT_LOOP, ar -> {
-      if (ar.succeeded()) {
-        run(ar.result());
-      } else {
-        logger.error(ar.cause());
-      }
-    });
+    run(client.createPool(DB_CONN_PER_EVENT_LOOP));
   }
 
   private void run(PostgresConnectionPool pool) {
     while (inflight < DB_MAX_INFLIGHT) {
       inflight++;
       count.add(1);
-      pool.execute("SELECT id, randomnumber from WORLD where id = " + randomWorld(), res -> {
-        inflight--;
-        run(pool);
-        if (res.failed()) {
-          logger.error(res.cause());
+      pool.getConnection(ar -> {
+        if (ar.succeeded()) {
+          PostgresConnection conn = ar.result();
+          conn.execute("SELECT id, randomnumber from WORLD where id = " + randomWorld(), res -> {
+            conn.close();
+            inflight--;
+            run(pool);
+            if (res.failed()) {
+              logger.error(res.cause());
+            }
+          });
+        } else {
+          ar.cause().printStackTrace();
         }
       });
     }
