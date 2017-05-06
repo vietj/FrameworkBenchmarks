@@ -77,6 +77,7 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
   private static final String PATH_JSON = "/json";
   private static final String PATH_DB = "/db";
   private static final String PATH_QUERIES = "/queries";
+  private static final String PATH_UPDATE = "/update";
   private static final String PATH_INFO = "/info";
 
   private static final CharSequence RESPONSE_TYPE_PLAIN = HttpHeaders.createOptimized("text/plain");
@@ -140,6 +141,9 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
         break;
       case PATH_QUERIES:
         new Queries().handle(request);
+        break;
+      case PATH_UPDATE:
+        new Update().handle(request);
         break;
       case PATH_INFO:
         handleInfo(request);
@@ -245,6 +249,54 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
       }
     }
 
+  }
+
+  class Update {
+
+    boolean failed;
+    JsonArray worlds = new JsonArray();
+
+    public void handle(HttpServerRequest req) {
+      HttpServerResponse resp = req.response();
+      final int queries = getQueries(req);
+
+      for (int i = 0; i < queries; i++) {
+        int id = randomWorld();
+        pool.execute("SELECT id, randomnumber from WORLD where id = " + id, query -> {
+          if (!failed) {
+            if (query.failed()) {
+              failed = true;
+              resp.setStatusCode(500).end(query.cause().getMessage());
+              return;
+            }
+
+            // we need a final reference
+            int randomNumber = randomWorld();
+            Row row = query.result().get(0);
+            worlds.add(new JsonObject().put("id", "" + row.get(0)).put("randomNumber", "" + randomNumber));
+
+            pool.execute("UPDATE world SET randomnumber = " + randomNumber + " WHERE id = " + id, update -> {
+              if (!failed) {
+                failed = true;
+                resp.setStatusCode(500).end(query.cause().getMessage());
+                return;
+              }
+
+              // stop condition
+              if (worlds.size() == queries) {
+                if (worlds.size() == queries) {
+                  resp
+                      .putHeader(HttpHeaders.SERVER, SERVER)
+                      .putHeader(HttpHeaders.DATE, dateString)
+                      .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
+                      .end(Json.encode(worlds.encode()));
+                }
+              }
+            });
+          }
+        });
+      }
+    }
   }
 
   private void handleInfo(HttpServerRequest request) {
