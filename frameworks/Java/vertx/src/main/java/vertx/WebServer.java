@@ -139,7 +139,7 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
         new Queries().handle(request);
         break;
       case PATH_UPDATE:
-        new Update().handle(request);
+        new Update(request).handle();
         break;
       case PATH_INFO:
         handleInfo(request);
@@ -268,16 +268,21 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
 
   class Update {
 
+    final HttpServerRequest request;
     boolean failed;
     JsonArray worlds = new JsonArray();
+    PostgresConnection conn;
 
-    public void handle(HttpServerRequest req) {
-      HttpServerResponse resp = req.response();
-      final int queries = getQueries(req);
+    public Update(HttpServerRequest request) {
+      this.request = request;
+    }
+
+    public void handle() {
+      final int queries = getQueries(request);
 
       pool.getConnection(ar1 -> {
         if (ar1.succeeded()) {
-          PostgresConnection conn = ar1.result();
+          conn = ar1.result();
 
           int[] ids = new int[queries];
           Row[] rows = new Row[queries];
@@ -289,8 +294,7 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
               if (!failed) {
                 if (ar2.failed()) {
                   failed = true;
-                  resp.setStatusCode(500).end(ar2.cause().getMessage());
-                  conn.close();
+                  sendError(ar2.cause());
                   return;
                 }
                 rows[index] = ar2.result().get(0);
@@ -298,12 +302,11 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
             });
           }
 
-          conn.execute("BEGIN", ar2 -> {
+          conn.execute("BEGIN", ar3 -> {
             if (!failed) {
-              if (ar2.failed()) {
+              if (ar3.failed()) {
                 failed = true;
-                resp.setStatusCode(500).end(ar2.cause().getMessage());
-                conn.close();
+                sendError(ar3.cause());
               }
 
               for (int i = 0;i < queries;i++) {
@@ -314,8 +317,7 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
                   if (!failed) {
                     if (ar4.failed()) {
                       failed = true;
-                      resp.setStatusCode(500).end(ar4.cause().getMessage());
-                      conn.close();
+                      sendError(ar4.cause());
                       return;
                     }
                     Row row = rows[index];
@@ -328,12 +330,11 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
                 if (!failed) {
                   if (ar5.failed()) {
                     failed = true;
-                    resp.setStatusCode(500).end(ar5.cause().getMessage());
-                    conn.close();
+                    sendError(ar5.cause());
                     return;
                   }
                   conn.close();
-                  resp
+                  request.response()
                       .putHeader(HttpHeaders.SERVER, SERVER)
                       .putHeader(HttpHeaders.DATE, dateString)
                       .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
@@ -343,9 +344,18 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
             }
           });
         } else {
-          resp.setStatusCode(500).end(ar1.cause().getMessage());
+          sendError(ar1.cause());
         }
       });
+    }
+
+    void sendError(Throwable err) {
+      failed = true;
+      logger.error("", err);
+      request.response().setStatusCode(500).end(err.getMessage());
+      if (conn != null) {
+        conn.close();
+      }
     }
   }
 
