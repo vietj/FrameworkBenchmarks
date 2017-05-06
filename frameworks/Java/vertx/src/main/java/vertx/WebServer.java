@@ -278,57 +278,68 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
       pool.getConnection(ar1 -> {
         if (ar1.succeeded()) {
           PostgresConnection conn = ar1.result();
+
+          int[] ids = new int[queries];
+          Row[] rows = new Row[queries];
+          for (int i = 0; i < queries; i++) {
+            int index = i;
+            int id = randomWorld();
+            ids[i] = id;
+            conn.execute("SELECT id, randomnumber from WORLD where id = " + id, ar2 -> {
+              if (!failed) {
+                if (ar2.failed()) {
+                  failed = true;
+                  resp.setStatusCode(500).end(ar2.cause().getMessage());
+                  conn.close();
+                  return;
+                }
+                rows[index] = ar2.result().get(0);
+              }
+            });
+          }
+
           conn.execute("BEGIN", ar2 -> {
-            if (ar2.succeeded()) {
-              for (int i = 0; i < queries; i++) {
-                int id = randomWorld();
-                conn.execute("SELECT id, randomnumber from WORLD where id = " + id, ar3 -> {
+            if (!failed) {
+              if (ar2.failed()) {
+                failed = true;
+                resp.setStatusCode(500).end(ar2.cause().getMessage());
+                conn.close();
+              }
+
+              for (int i = 0;i < queries;i++) {
+                int index = i;
+                int randomNumber = randomWorld();
+
+                conn.execute("UPDATE world SET randomnumber = " + randomNumber + " WHERE id = " + ids[i], ar4 -> {
                   if (!failed) {
-                    if (ar3.failed()) {
+                    if (ar4.failed()) {
                       failed = true;
-                      resp.setStatusCode(500).end(ar3.cause().getMessage());
+                      resp.setStatusCode(500).end(ar4.cause().getMessage());
                       conn.close();
                       return;
                     }
-
-                    int randomNumber = randomWorld();
-
-                    conn.execute("UPDATE world SET randomnumber = " + randomNumber + " WHERE id = " + id, ar4 -> {
-                      if (!failed) {
-                        if (ar4.failed()) {
-                          failed = true;
-                          resp.setStatusCode(500).end(ar4.cause().getMessage());
-                          conn.close();
-                          return;
-                        }
-                      }
-
-                      // we need a final reference
-                      Row row = ar3.result().get(0);
-                      worlds.add(new JsonObject().put("id", "" + row.get(0)).put("randomNumber", "" + randomNumber));
-
-                      // stop condition
-                      if (worlds.size() == queries) {
-                        conn.execute("COMMIT", ar5 -> {
-                          conn.close();
-                          if (ar5.succeeded()) {
-                            resp
-                                .putHeader(HttpHeaders.SERVER, SERVER)
-                                .putHeader(HttpHeaders.DATE, dateString)
-                                .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
-                                .end(Json.encode(worlds.encode()));
-                          } else {
-                            resp.setStatusCode(500).end(ar5.cause().getMessage());
-                          }
-                        });
-                      }
-                    });
+                    Row row = rows[index];
+                    worlds.add(new JsonObject().put("id", "" + row.get(0)).put("randomNumber", "" + randomNumber));
                   }
                 });
               }
-            } else {
-              conn.close();
-              resp.setStatusCode(500).end(ar1.cause().getMessage());
+
+              conn.execute("COMMIT", ar5 -> {
+                if (!failed) {
+                  if (ar5.failed()) {
+                    failed = true;
+                    resp.setStatusCode(500).end(ar5.cause().getMessage());
+                    conn.close();
+                    return;
+                  }
+                  conn.close();
+                  resp
+                      .putHeader(HttpHeaders.SERVER, SERVER)
+                      .putHeader(HttpHeaders.DATE, dateString)
+                      .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
+                      .end(Json.encode(worlds.encode()));
+                }
+              });
             }
           });
         } else {
@@ -352,6 +363,9 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
     JsonObject config = new JsonObject(new String(Files.readAllBytes(new File(args[0]).toPath())));
     int procs = Runtime.getRuntime().availableProcessors();
     Vertx vertx = Vertx.vertx();
+    vertx.exceptionHandler(err -> {
+      err.printStackTrace();
+    });
     vertx.deployVerticle(WebServer.class.getName(),
         new DeploymentOptions().setInstances(procs * 2).setConfig(config), event -> {
           if (event.succeeded()) {
