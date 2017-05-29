@@ -33,9 +33,9 @@
 			<version>${stack.version}</version>
 		</dependency>
 		<dependency>
-			<groupId>io.vertx</groupId>
+			<groupId>com.julienviet</groupId>
 			<artifactId>vertx-pg-client</artifactId>
-			<version>${stack.version}</version>
+			<version>1.0.0-SNAPSHOT</version>
 		</dependency>
 		<dependency>
 			<groupId>com.github.alaisi.pgasync</groupId>

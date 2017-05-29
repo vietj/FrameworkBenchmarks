@@ -1,15 +1,15 @@
 package vertx;
 
+import com.julienviet.pgclient.PgClient;
+import com.julienviet.pgclient.PgClientOptions;
+import com.julienviet.pgclient.PgConnection;
+import com.julienviet.pgclient.PgConnectionPool;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
-import io.vertx.pgclient.PostgresClient;
-import io.vertx.pgclient.PostgresClientOptions;
-import io.vertx.pgclient.PostgresConnection;
-import io.vertx.pgclient.PostgresConnectionPool;
 
 import java.io.File;
 import java.nio.file.Files;
@@ -56,7 +56,7 @@ public class DbBenchmark extends AbstractVerticle {
   @Override
   public void start() throws Exception {
     JsonObject config = config();
-    PostgresClientOptions options = new PostgresClientOptions();
+    PgClientOptions options = new PgClientOptions();
     options.setDatabase(config.getString("database"));
     options.setHost(config.getString("host"));
     options.setUsername(config.getString("username"));
@@ -70,17 +70,17 @@ public class DbBenchmark extends AbstractVerticle {
       options.setReceiveBufferSize(RECEIVE_BUFFER_SIZE);
     }
 
-    PostgresClient client = PostgresClient.create(vertx, options);
+    PgClient client = PgClient.create(vertx, options);
     run(client.createPool(DB_CONN_PER_EVENT_LOOP));
   }
 
-  private void run(PostgresConnectionPool pool) {
+  private void run(PgConnectionPool pool) {
     while (inflight < DB_MAX_INFLIGHT) {
       inflight++;
       count.add(1);
       pool.getConnection(ar -> {
         if (ar.succeeded()) {
-          PostgresConnection conn = ar.result();
+          PgConnection conn = ar.result();
           conn.execute("SELECT id, randomnumber from WORLD where id = " + randomWorld(), res -> {
             conn.close();
             inflight--;

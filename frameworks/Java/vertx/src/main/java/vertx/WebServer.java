@@ -1,5 +1,9 @@
 package vertx;
 
+import com.julienviet.pgclient.PgClient;
+import com.julienviet.pgclient.PgClientOptions;
+import com.julienviet.pgclient.PgConnection;
+import com.julienviet.pgclient.PgConnectionPool;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Future;
@@ -17,19 +21,14 @@ import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
-import io.vertx.pgclient.PostgresClient;
-import io.vertx.pgclient.PostgresClientOptions;
-import io.vertx.pgclient.PostgresConnection;
-import io.vertx.pgclient.PostgresConnectionPool;
-import io.vertx.pgclient.Result;
-import io.vertx.pgclient.Row;
+import io.vertx.ext.sql.ResultSet;
 import vertx.model.World;
 
 import java.io.File;
 import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.Comparator;
+import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
 public class WebServer extends AbstractVerticle implements Handler<HttpServerRequest> {
@@ -102,8 +101,8 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
 
   private HttpServer server;
 
-  private PostgresClient client;
-  private PostgresConnectionPool pool;
+  private PgClient client;
+  private PgConnectionPool pool;
 
   @Override
   public void start(Future<Void> startFuture) throws Exception {
@@ -115,13 +114,13 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
     vertx.setPeriodic(1000, handler -> {
       dateString = HttpHeaders.createOptimized(java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME.format(java.time.ZonedDateTime.now()));
     });
-    PostgresClientOptions options = new PostgresClientOptions();
+    PgClientOptions options = new PgClientOptions();
     options.setDatabase(config.getString("database"));
     options.setHost(config.getString("host"));
     options.setUsername(config.getString("username"));
     options.setPassword(config.getString("password"));
     options.setPipeliningLimit(PSQL_DB_PIPELINING_LIMIT);
-    client = PostgresClient.create(vertx, options);
+    client = PgClient.create(vertx, options);
     pool = client.createPool(PSQL_DB_POOL_SIZE);
   }
 
@@ -194,22 +193,22 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
     HttpServerResponse resp = req.response();
     pool.getConnection(ar -> {
       if (ar.succeeded()) {
-        PostgresConnection conn = ar.result();
+        PgConnection conn = ar.result();
         conn.execute("SELECT id, randomnumber from WORLD where id = " + randomWorld(), res -> {
           if (res.succeeded()) {
-            Result resultSet = res.result();
-            if (resultSet == null || resultSet.size() == 0) {
+            List<JsonArray> resultSet = res.result().getResults();
+            if (resultSet.isEmpty()) {
               resp.setStatusCode(404).end();
               conn.close();
               return;
             }
-            Row row = resultSet.get(0);
+            JsonArray row = resultSet.get(0);
             conn.close();
             resp
                 .putHeader(HttpHeaders.SERVER, SERVER)
                 .putHeader(HttpHeaders.DATE, dateString)
                 .putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
-                .end(Json.encode(new World((Integer)row.get(0), (Integer) row.get(1))));
+                .end(Json.encode(new World(row.getInteger(0), row.getInteger(1))));
           } else {
             logger.error(res.cause());
             conn.close();
@@ -233,7 +232,7 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
 
       pool.getConnection(ar -> {
         if (ar.succeeded()) {
-          PostgresConnection conn = ar.result();
+          PgConnection conn = ar.result();
           for (int i = 0; i < queries; i++) {
             conn.execute("SELECT id, randomnumber from WORLD where id = " + randomWorld(), query -> {
               if (!failed) {
@@ -245,8 +244,8 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
                 }
 
                 // we need a final reference
-                final Row row = query.result().get(0);
-                worlds.add(new JsonObject().put("id", "" + row.get(0)).put("randomNumber", "" + row.get(1)));
+                final JsonArray row = query.result().getResults().get(0);
+                worlds.add(new JsonObject().put("id", "" + row.getInteger(0)).put("randomNumber", "" + row.getInteger(1)));
 
                 // stop condition
                 if (worlds.size() == queries) {
@@ -272,7 +271,7 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
 
     final HttpServerRequest request;
     boolean failed;
-    PostgresConnection conn;
+    PgConnection conn;
     int queryCount;
     final World[] worlds;
 
@@ -296,7 +295,7 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
                   sendError(ar2.cause());
                   return;
                 }
-                worlds[index] = new World((Integer) ar2.result().get(0).get(0), randomWorld());
+                worlds[index] = new World(ar2.result().getResults().get(0).getInteger(0), randomWorld());
                 if (++queryCount == worlds.length) {
                   handleUpdates();
                 }
