@@ -62,6 +62,13 @@
 			<artifactId>logback-classic</artifactId>
 			<version>1.0.13</version>
 		</dependency>
+
+
+		<dependency>
+			<groupId>ru.yandex.qatools.embed</groupId>
+			<artifactId>postgresql-embedded</artifactId>
+			<version>2.2</version>
+		</dependency>
 	</dependencies>
 
 	<build>
