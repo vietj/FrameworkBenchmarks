@@ -1,6 +1,5 @@
 package vertx;
 
-import com.julienviet.pgclient.PgClientOptions;
 import de.flapdoodle.embed.process.config.IRuntimeConfig;
 import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Vertx;
