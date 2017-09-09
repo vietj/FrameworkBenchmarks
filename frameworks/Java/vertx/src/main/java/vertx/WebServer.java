@@ -333,6 +333,7 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
     headers.add(HEADER_CONTENT_TYPE, RESPONSE_TYPE_JSON);
     response.end(new JsonObject()
         .put("PSQL_DB_POOL_SIZE", PSQL_DB_POOL_SIZE)
+        .put("PSQL_DB_PIPELINING_LIMIT", PSQL_DB_PIPELINING_LIMIT)
         .put("config", config())
         .encode());
   }
