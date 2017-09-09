@@ -119,7 +119,7 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
     PgClientOptions options = new PgClientOptions();
     options.setDatabase(config.getString("database"));
     options.setHost(config.getString("host"));
-    options.setPort(config.getInteger("port"));
+    options.setPort(config.getInteger("port", 5432));
     options.setUsername(config.getString("username"));
     options.setPassword(config.getString("password"));
     options.setPipeliningLimit(PSQL_DB_PIPELINING_LIMIT);
