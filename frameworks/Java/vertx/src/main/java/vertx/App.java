@@ -23,6 +23,7 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import vertx.model.Fortune;
+import vertx.model.Message;
 import vertx.model.World;
 
 import java.io.File;
@@ -68,7 +69,6 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
   private static final CharSequence RESPONSE_TYPE_PLAIN = HttpHeaders.createOptimized("text/plain");
   private static final CharSequence RESPONSE_TYPE_JSON = HttpHeaders.createOptimized("application/json");
 
-  private static final String TEXT_MESSAGE = "message";
   private static final String HELLO_WORLD = "Hello, world!";
   private static final Buffer HELLO_WORLD_BUFFER = Buffer.buffer(HELLO_WORLD);
 
@@ -165,14 +165,13 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
   }
 
   private void handleJson(HttpServerRequest request) {
-    Buffer buff = Buffer.buffer(Json.encode(Collections.singletonMap(TEXT_MESSAGE, HELLO_WORLD)));
     HttpServerResponse response = request.response();
     MultiMap headers = response.headers();
     headers
         .add(HEADER_CONTENT_TYPE, RESPONSE_TYPE_JSON)
         .add(HEADER_SERVER, SERVER)
         .add(HEADER_DATE, dateString);
-    response.end(buff);
+    response.end(new Message("Hello, World!").toBuffer());
   }
 
   /**
