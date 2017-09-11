@@ -42,7 +42,11 @@
 			<artifactId>logback-classic</artifactId>
 			<version>1.0.13</version>
 		</dependency>
-
+		<dependency>
+			<groupId>com.fizzed</groupId>
+			<artifactId>rocker-compiler</artifactId>
+			<version>0.22.0</version>
+		</dependency>
 
 		<dependency>
 			<groupId>ru.yandex.qatools.embed</groupId>
@@ -60,6 +64,29 @@
 					<source>1.8</source>
 					<target>1.8</target>
 				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>com.fizzed</groupId>
+				<artifactId>rocker-maven-plugin</artifactId>
+				<version>0.22.0</version>
+				<executions>
+					<execution>
+						<id>generate-rocker-templates</id>
+						<phase>generate-sources</phase>
+						<goals>
+							<goal>generate</goal>
+						</goals>
+						<configuration>
+							<javaVersion>1.8</javaVersion>
+							<templateDirectory>${basedir}/src/main/templates</templateDirectory>
+							<outputDirectory>${basedir}/target/generated-sources/rocker</outputDirectory>
+							<discardLogicWhitespace>false</discardLogicWhitespace>
+							<addAsSources>true</addAsSources>
+							<optimize>true</optimize>
+							<failOnError>true</failOnError>
+						</configuration>
+					</execution>
+				</executions>
 			</plugin>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>

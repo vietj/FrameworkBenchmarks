@@ -22,10 +22,12 @@ import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
+import vertx.model.Fortune;
 import vertx.model.World;
 
 import java.io.File;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -80,6 +82,7 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
   private static final String PATH_DB = "/db";
   private static final String PATH_QUERIES = "/queries";
   private static final String PATH_UPDATES = "/updates";
+  private static final String PATH_FORTUNES = "/fortunes";
   private static final String PATH_INFO = "/info";
 
   private static final CharSequence RESPONSE_TYPE_PLAIN = HttpHeaders.createOptimized("text/plain");
@@ -105,6 +108,7 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
   private PgConnection conn;
   private PgPreparedStatement worldUpdate;
   private PgPreparedStatement worldSelect;
+  private PgPreparedStatement fortuneSelect;
 
   @Override
   public void start(Future<Void> startFuture) throws Exception {
@@ -129,6 +133,7 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
         conn = ar.result();
         worldUpdate = conn.prepare("UPDATE world SET randomnumber=$1 WHERE id=$2");
         worldSelect = conn.prepare("SELECT id, randomnumber from WORLD where id=$1");
+        fortuneSelect = conn.prepare("SELECT id, message from FORTUNE");
         startFuture.complete();
       } else {
         startFuture.fail(ar.cause());
@@ -153,6 +158,9 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
         break;
       case PATH_UPDATES:
         new Update(request).handle();
+        break;
+      case PATH_FORTUNES:
+        handleFortunes(request);
         break;
       case PATH_INFO:
         handleInfo(request);
@@ -325,6 +333,34 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
       logger.error("", err);
       request.response().setStatusCode(500).end(err.getMessage());
     }
+  }
+
+  private void handleFortunes(HttpServerRequest req) {
+    fortuneSelect.query().execute(ar -> {
+      HttpServerResponse response = req.response();
+      if (ar.succeeded()) {
+        List<Fortune> fortunes = new ArrayList<>();
+        List<JsonArray> resultSet = ar.result().getResults();
+        if (resultSet == null || resultSet.size() == 0) {
+          response.setStatusCode(404).end("No results");
+          return;
+        }
+        for (JsonArray row : resultSet) {
+          fortunes.add(new Fortune(row.getInteger(0), row.getString(1)));
+        }
+        fortunes.add(new Fortune(0, "Additional fortune added at request time."));
+        Collections.sort(fortunes);
+        response
+            .putHeader(HttpHeaders.SERVER, SERVER)
+            .putHeader(HttpHeaders.DATE, dateString)
+            .putHeader(HttpHeaders.CONTENT_TYPE, "text/html; charset=UTF-8")
+            .end(FortunesTemplate.template(fortunes).render().toString());
+      } else {
+        Throwable err = ar.cause();
+        logger.error("", err);
+        response.setStatusCode(500).end(err.getMessage());
+      }
+    });
   }
 
   private void handleInfo(HttpServerRequest request) {
