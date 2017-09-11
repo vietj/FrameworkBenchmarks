@@ -33,7 +33,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
-public class WebServer extends AbstractVerticle implements Handler<HttpServerRequest> {
+public class App extends AbstractVerticle implements Handler<HttpServerRequest> {
 
   /**
    * Returns the value of the "queries" getRequest parameter, which is an integer
@@ -56,26 +56,7 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
     }
   }
 
-  static Logger logger = LoggerFactory.getLogger(WebServer.class.getName());
-
-  static int getIntEnv(String name, int def) {
-    try {
-      return Integer.parseInt(System.getenv(name));
-    } catch (Exception e) {
-      return def;
-    }
-  }
-
-  static boolean getBooleanEnv(String name, boolean def) {
-    try {
-      return Boolean.parseBoolean(System.getenv(name));
-    } catch (Exception e) {
-      return def;
-    }
-  }
-
-  private static final int PSQL_DB_POOL_SIZE = getIntEnv("PSQL_DB_POOL_SIZE", 1);
-  private static final int PSQL_DB_PIPELINING_LIMIT = getIntEnv("PSQL_DB_PIPELINING_LIMIT", 256);
+  static Logger logger = LoggerFactory.getLogger(App.class.getName());
 
   private static final String PATH_PLAINTEXT = "/plaintext";
   private static final String PATH_JSON = "/json";
@@ -83,7 +64,6 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
   private static final String PATH_QUERIES = "/queries";
   private static final String PATH_UPDATES = "/updates";
   private static final String PATH_FORTUNES = "/fortunes";
-  private static final String PATH_INFO = "/info";
 
   private static final CharSequence RESPONSE_TYPE_PLAIN = HttpHeaders.createOptimized("text/plain");
   private static final CharSequence RESPONSE_TYPE_JSON = HttpHeaders.createOptimized("application/json");
@@ -114,7 +94,7 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
   public void start(Future<Void> startFuture) throws Exception {
     int port = 8080;
     server = vertx.createHttpServer(new HttpServerOptions());
-    server.requestHandler(WebServer.this).listen(port);
+    server.requestHandler(App.this).listen(port);
     dateString = HttpHeaders.createOptimized(java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME.format(java.time.ZonedDateTime.now()));
     JsonObject config = config();
     vertx.setPeriodic(1000, handler -> {
@@ -126,7 +106,6 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
     options.setPort(config.getInteger("port", 5432));
     options.setUsername(config.getString("username"));
     options.setPassword(config.getString("password"));
-    options.setPipeliningLimit(PSQL_DB_PIPELINING_LIMIT);
     client = PgClient.create(vertx, options);
     client.connect(ar -> {
       if (ar.succeeded()) {
@@ -161,9 +140,6 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
         break;
       case PATH_FORTUNES:
         handleFortunes(request);
-        break;
-      case PATH_INFO:
-        handleInfo(request);
         break;
       default:
         request.response().setStatusCode(404);
@@ -363,17 +339,6 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
     });
   }
 
-  private void handleInfo(HttpServerRequest request) {
-    HttpServerResponse response = request.response();
-    MultiMap headers = response.headers();
-    headers.add(HEADER_CONTENT_TYPE, RESPONSE_TYPE_JSON);
-    response.end(new JsonObject()
-        .put("PSQL_DB_POOL_SIZE", PSQL_DB_POOL_SIZE)
-        .put("PSQL_DB_PIPELINING_LIMIT", PSQL_DB_PIPELINING_LIMIT)
-        .put("config", config())
-        .encode());
-  }
-
   public static void main(String[] args) throws Exception {
     JsonObject config = new JsonObject(new String(Files.readAllBytes(new File(args[0]).toPath())));
     int procs = Runtime.getRuntime().availableProcessors();
@@ -381,7 +346,7 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
     vertx.exceptionHandler(err -> {
       err.printStackTrace();
     });
-    vertx.deployVerticle(WebServer.class.getName(),
+    vertx.deployVerticle(App.class.getName(),
         new DeploymentOptions().setInstances(procs * 2).setConfig(config), event -> {
           if (event.succeeded()) {
             logger.debug("Your Vert.x application is started!");

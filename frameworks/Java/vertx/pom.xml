@@ -22,7 +22,7 @@
 
 	<properties>
 		<!-- the main class -->
-		<main.class>vertx.WebServer</main.class>
+		<main.class>vertx.App</main.class>
 		<stack.version>3.5.0.Beta1</stack.version>
 	</properties>
 
