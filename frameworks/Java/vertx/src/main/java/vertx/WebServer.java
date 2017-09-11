@@ -79,7 +79,7 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
   private static final String PATH_JSON = "/json";
   private static final String PATH_DB = "/db";
   private static final String PATH_QUERIES = "/queries";
-  private static final String PATH_UPDATE = "/update";
+  private static final String PATH_UPDATES = "/updates";
   private static final String PATH_INFO = "/info";
 
   private static final CharSequence RESPONSE_TYPE_PLAIN = HttpHeaders.createOptimized("text/plain");
@@ -151,7 +151,7 @@ public class WebServer extends AbstractVerticle implements Handler<HttpServerReq
       case PATH_QUERIES:
         new Queries().handle(request);
         break;
-      case PATH_UPDATE:
+      case PATH_UPDATES:
         new Update(request).handle();
         break;
       case PATH_INFO:
