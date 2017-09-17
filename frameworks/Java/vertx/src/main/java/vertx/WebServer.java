@@ -23,6 +23,7 @@ import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Handler;
 import io.vertx.core.MultiMap;
 import io.vertx.core.Vertx;
+import io.vertx.core.VertxOptions;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpHeaders;
 import io.vertx.core.http.HttpServerRequest;
@@ -210,6 +211,7 @@ public class WebServer extends AbstractVerticle implements Handler<NetSocket> {
     vertx.deployVerticle(WebServer.class.getName(),
         new DeploymentOptions().setInstances(procs * 2).setConfig(config), event -> {
           if (event.succeeded()) {
+            System.out.println("Native: " + VertxOptions.DEFAULT_NATIVE_TRANSPORT);
             logger.debug("Your Vert.x application is started!");
           } else {
             logger.error("Unable to start your application", event.cause());
