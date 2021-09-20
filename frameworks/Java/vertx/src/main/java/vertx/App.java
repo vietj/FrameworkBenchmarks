@@ -22,6 +22,7 @@ import io.vertx.sqlclient.PreparedStatement;
 import io.vertx.sqlclient.Row;
 import io.vertx.sqlclient.RowIterator;
 import io.vertx.sqlclient.RowSet;
+import io.vertx.sqlclient.SqlClient;
 import io.vertx.sqlclient.Tuple;
 import io.vertx.sqlclient.impl.SqlClientInternal;
 import io.vertx.sqlclient.impl.command.CompositeCommand;
@@ -106,16 +107,16 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
 
   private final RockerOutputFactory<BufferRockerOutput> factory = BufferRockerOutput.factory(ContentType.RAW);
 
-  private PreparedQuery<RowSet<Row>> SELECT_WORLD_QUERY;
-  private PreparedQuery<RowSet<Row>> SELECT_FORTUNE_QUERY;
-  private PreparedQuery<RowSet<Row>> UPDATE_WORLD_QUERY;
-
   public static CharSequence createDateHeader() {
     return HttpHeaders.createOptimized(DateTimeFormatter.RFC_1123_DATE_TIME.format(ZonedDateTime.now()));
   }
 
+  public App(SqlClientInternal client) {
+    this.client = client;
+  }
+
   @Override
-  public void start(Promise<Void> startPromise) throws Exception {
+  public void start(Promise<Void> startPromise) {
     int port = 8080;
     server = vertx.createHttpServer(new HttpServerOptions());
     server.requestHandler(App.this).listen(port);
@@ -127,24 +128,6 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
         HEADER_CONTENT_LENGTH, HELLO_WORLD_LENGTH };
     JsonObject config = config();
     vertx.setPeriodic(1000, id -> plaintextHeaders[5] = dateString = createDateHeader());
-    PgConnectOptions options = new PgConnectOptions();
-    options.setDatabase(config.getString("database", "hello_world"));
-    options.setHost(config.getString("host", "tfb-database"));
-    options.setPort(config.getInteger("port", 5432));
-    options.setUser(config.getString("username", "benchmarkdbuser"));
-    options.setPassword(config.getString("password", "benchmarkdbpass"));
-    options.setCachePreparedStatements(true);
-    options.setPipeliningLimit(100_000); // Large pipelining means less flushing and we use a single connection anyway
-    PgConnection.connect(vertx, options).flatMap(conn -> {
-      client = (SqlClientInternal)conn;
-      Future<PreparedStatement> f1 = conn.prepare(SELECT_WORLD);
-      Future<PreparedStatement> f2 = conn.prepare(SELECT_FORTUNE);
-      Future<PreparedStatement> f3 = conn.prepare(UPDATE_WORLD);
-      f1.onSuccess(ps -> SELECT_WORLD_QUERY = ps.query());
-      f2.onSuccess(ps -> SELECT_FORTUNE_QUERY = ps.query());
-      f3.onSuccess(ps -> UPDATE_WORLD_QUERY = ps.query());
-      return CompositeFuture.all(f1, f2, f3);
-    }).onComplete(ar -> startPromise.complete());
   }
 
   @Override
@@ -211,7 +194,7 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
 
   private void handleDb(HttpServerRequest req) {
     HttpServerResponse resp = req.response();
-    SELECT_WORLD_QUERY.execute(Tuple.of(randomWorld()), res -> {
+    client.preparedQuery(SELECT_WORLD).execute(Tuple.of(randomWorld()), res -> {
       if (res.succeeded()) {
         RowIterator<Row> resultSet = res.result().iterator();
         if (!resultSet.hasNext()) {
@@ -322,7 +305,7 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
       for (World world : worlds) {
         batch.add(Tuple.of(world.getRandomNumber(), world.getId()));
       }
-      UPDATE_WORLD_QUERY.executeBatch(batch, ar2 -> {
+      client.preparedQuery(UPDATE_WORLD).executeBatch(batch, ar2 -> {
         if (ar2.failed()) {
           sendError(ar2.cause());
           return;
@@ -346,7 +329,7 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
   }
 
   private void handleFortunes(HttpServerRequest req) {
-    SELECT_FORTUNE_QUERY.execute(ar -> {
+    client.preparedQuery(SELECT_FORTUNE).execute(ar -> {
       HttpServerResponse response = req.response();
       if (ar.succeeded()) {
         List<Fortune> fortunes = new ArrayList<>();
@@ -390,8 +373,17 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
     vertx.exceptionHandler(err -> {
       err.printStackTrace();
     });
+    PgConnectOptions options = new PgConnectOptions();
+    options.setDatabase(config.getString("database", "hello_world"));
+    options.setHost(config.getString("host", "tfb-database"));
+    options.setPort(config.getInteger("port", 5432));
+    options.setUser(config.getString("username", "benchmarkdbuser"));
+    options.setPassword(config.getString("password", "benchmarkdbpass"));
+    options.setCachePreparedStatements(true);
+    options.setPipeliningLimit(100_000);
+    SqlClient pool = PgPool.client(vertx, options, new PoolOptions().setMaxSize(eventLoopPoolSize));
     printConfig(vertx);
-    vertx.deployVerticle(App.class.getName(),
+    vertx.deployVerticle(() -> new App((SqlClientInternal) pool),
         new DeploymentOptions().setInstances(eventLoopPoolSize).setConfig(config), event -> {
           if (event.succeeded()) {
             logger.info("Server listening on port " + 8080);
