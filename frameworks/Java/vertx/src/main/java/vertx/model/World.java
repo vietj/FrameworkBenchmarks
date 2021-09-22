@@ -1,11 +1,15 @@
 package vertx.model;
 
+import com.jsoniter.annotation.JsonProperty;
+
 /**
  * The model for the "world" database table.
  */
 public final class World implements Comparable<World> {
 
+  @JsonProperty(encoder = StringToIntEncoder.class)
   private final int id;
+  @JsonProperty(encoder = StringToIntEncoder.class)
   private final int randomNumber;
 
   /**
@@ -31,4 +35,5 @@ public final class World implements Comparable<World> {
   public int compareTo(World o) {
     return Integer.compare(id, o.id);
   }
+
 }

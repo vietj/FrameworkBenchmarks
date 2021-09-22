@@ -2,6 +2,10 @@ package vertx;
 
 import com.fizzed.rocker.ContentType;
 import com.fizzed.rocker.RockerOutputFactory;
+import com.jsoniter.output.JsonStream;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufOutputStream;
+import io.netty.buffer.Unpooled;
 import io.netty.util.concurrent.MultithreadEventExecutorGroup;
 import io.vertx.pgclient.*;
 import io.vertx.core.*;
@@ -11,12 +15,9 @@ import io.vertx.core.http.HttpServer;
 import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.http.HttpServerResponse;
-import io.vertx.core.json.Json;
-import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
-import io.vertx.sqlclient.PoolOptions;
 import io.vertx.sqlclient.PreparedQuery;
 import io.vertx.sqlclient.PreparedStatement;
 import io.vertx.sqlclient.Row;
@@ -24,7 +25,6 @@ import io.vertx.sqlclient.RowIterator;
 import io.vertx.sqlclient.RowSet;
 import io.vertx.sqlclient.Tuple;
 import io.vertx.sqlclient.impl.SqlClientInternal;
-import io.vertx.sqlclient.impl.command.CompositeCommand;
 import vertx.model.Fortune;
 import vertx.model.Message;
 import vertx.model.World;
@@ -196,7 +196,7 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
         .add(HEADER_CONTENT_TYPE, RESPONSE_TYPE_JSON)
         .add(HEADER_SERVER, SERVER)
         .add(HEADER_DATE, dateString);
-    response.end(new Message("Hello, World!").toBuffer(), NULL_HANDLER);
+    response.end(toJson(new Message("Hello, World!")), NULL_HANDLER);
   }
 
   /**
@@ -223,7 +223,7 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
             .putHeader(HttpHeaders.SERVER, SERVER)
             .putHeader(HttpHeaders.DATE, dateString)
             .putHeader(HttpHeaders.CONTENT_TYPE, RESPONSE_TYPE_JSON)
-            .end(Json.encode(new World(row.getInteger(0), row.getInteger(1))), NULL_HANDLER);
+            .end(toJson(new World(row.getInteger(0), row.getInteger(1))), NULL_HANDLER);
       } else {
         logger.error(res.cause());
         resp.setStatusCode(500).end(res.cause().getMessage());
@@ -231,31 +231,32 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
     });
   }
 
-
-  class Queries implements Handler<AsyncResult<RowSet<Row>>> {
+  class Queries implements Handler<AsyncResult<RowSet<World>>> {
 
     boolean failed;
-    JsonArray worlds = new JsonArray();
+    World[] worlds;
     final HttpServerRequest req;
     final HttpServerResponse resp;
     final int queries;
+    private int resultIdx;
 
     public Queries(HttpServerRequest req) {
       this.req = req;
       this.resp = req.response();
       this.queries = getQueries(req);
+      this.worlds = new World[queries];
     }
 
     private void handle() {
       client.group(c -> {
         for (int i = 0; i < queries; i++) {
-          c.preparedQuery(SELECT_WORLD).execute(Tuple.of(randomWorld()), this);
+          c.preparedQuery(SELECT_WORLD).mapping(row -> new World(row.getInteger(0), row.getInteger(1))).execute(Tuple.of(randomWorld()), this);
         }
       });
     }
 
     @Override
-    public void handle(AsyncResult<RowSet<Row>> ar) {
+    public void handle(AsyncResult<RowSet<World>> ar) {
       if (!failed) {
         if (ar.failed()) {
           failed = true;
@@ -264,16 +265,16 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
         }
 
         // we need a final reference
-        final Tuple row = ar.result().iterator().next();
-        worlds.add(new JsonObject().put("id", "" + row.getInteger(0)).put("randomNumber", "" + row.getInteger(1)));
+        final World row = ar.result().iterator().next();
+        worlds[resultIdx++] = row;
 
         // stop condition
-        if (worlds.size() == queries) {
+        if (resultIdx == queries) {
           resp
               .putHeader(HttpHeaders.SERVER, SERVER)
               .putHeader(HttpHeaders.DATE, dateString)
               .putHeader(HttpHeaders.CONTENT_TYPE, RESPONSE_TYPE_JSON)
-              .end(worlds.encode(), NULL_HANDLER);
+              .end(JsonStream.serialize(worlds), NULL_HANDLER);
         }
       }
     }
@@ -295,7 +296,7 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
     private void handle() {
 
       client.group(c -> {
-        PreparedQuery<RowSet<Row>> preparedQuery = c.preparedQuery(SELECT_WORLD);
+        PreparedQuery<RowSet<World>> preparedQuery = c.preparedQuery(SELECT_WORLD).mapping(row -> new World(row.getInteger(0), randomWorld()));
         for (int i = 0; i < worlds.length; i++) {
           int id = randomWorld();
           int index = i;
@@ -306,7 +307,7 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
                 sendError(ar2.cause());
                 return;
               }
-              worlds[index] = new World(ar2.result().iterator().next().getInteger(0), randomWorld());
+              worlds[index] = ar2.result().iterator().next();
               if (++queryCount == worlds.length) {
                 handleUpdates();
               }
@@ -327,15 +328,11 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
           sendError(ar2.cause());
           return;
         }
-        JsonArray json = new JsonArray();
-        for (World world : worlds) {
-          json.add(new JsonObject().put("id", "" + world.getId()).put("randomNumber", "" + world.getRandomNumber()));
-        }
         req.response()
             .putHeader(HttpHeaders.SERVER, SERVER)
             .putHeader(HttpHeaders.DATE, dateString)
             .putHeader(HttpHeaders.CONTENT_TYPE, RESPONSE_TYPE_JSON)
-            .end(json.toBuffer(), NULL_HANDLER);
+            .end(toJson(worlds), NULL_HANDLER);
       });
     }
 
@@ -425,5 +422,12 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
     logger.info("Vertx: " + version);
     logger.info("Event Loop Size: " + ((MultithreadEventExecutorGroup)vertx.nettyEventLoopGroup()).executorCount());
     logger.info("Native transport : " + nativeTransport);
+  }
+
+  static Buffer toJson(Object o) {
+    ByteBuf buf = Unpooled.buffer();
+    ByteBufOutputStream out = new ByteBufOutputStream(buf);
+    JsonStream.serialize(o, out);
+    return Buffer.buffer(buf);
   }
 }
