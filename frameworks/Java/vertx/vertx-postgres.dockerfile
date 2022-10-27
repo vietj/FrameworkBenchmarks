@@ -9,6 +9,8 @@ EXPOSE 8080
 CMD export DBIP=`getent hosts tfb-database | awk '{ print $1 }'` && \
     sed -i "s|tfb-database|$DBIP|g" /vertx/src/main/conf/config.json && \
     java \
+      --enable-preview \
+      --add-opens=java.base/java.lang=ALL-UNNAMED \
       -Xms2G \
       -Xmx2G \
       -server \

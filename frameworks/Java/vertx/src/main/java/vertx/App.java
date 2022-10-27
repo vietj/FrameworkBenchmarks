@@ -3,6 +3,8 @@ package vertx;
 import com.fizzed.rocker.ContentType;
 import com.fizzed.rocker.RockerOutputFactory;
 import io.netty.util.concurrent.MultithreadEventExecutorGroup;
+import io.vertx.await.Async;
+import io.vertx.await.impl.EventLoopScheduler;
 import io.vertx.pgclient.*;
 import io.vertx.core.*;
 import io.vertx.core.buffer.Buffer;
@@ -43,6 +45,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
+import static io.vertx.await.Async.await;
+
 public class App extends AbstractVerticle implements Handler<HttpServerRequest> {
 
   /**
@@ -65,6 +69,8 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
       return 1;
     }
   }
+
+  private static final boolean USE_EVENT_LOOP_SCHEDULER = EventLoopScheduler.isAvailable();
 
   static Logger logger = LoggerFactory.getLogger(App.class.getName());
 
@@ -103,6 +109,7 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
   private CharSequence dateString;
 
   private CharSequence[] plaintextHeaders;
+  private Async async;
 
   private final RockerOutputFactory<BufferRockerOutput> factory = BufferRockerOutput.factory(ContentType.RAW);
 
@@ -120,6 +127,7 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
     server = vertx.createHttpServer(new HttpServerOptions());
     server.requestHandler(App.this).listen(port);
     dateString = createDateHeader();
+    async = new Async(vertx, USE_EVENT_LOOP_SCHEDULER);
     plaintextHeaders = new CharSequence[] {
         HEADER_CONTENT_TYPE, RESPONSE_TYPE_PLAIN,
         HEADER_SERVER, SERVER,
@@ -181,22 +189,26 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
   }
 
   private void handlePlainText(HttpServerRequest request) {
-    HttpServerResponse response = request.response();
-    MultiMap headers = response.headers();
-    for (int i = 0;i < plaintextHeaders.length; i+= 2) {
-      headers.add(plaintextHeaders[i], plaintextHeaders[i + 1]);
-    }
-    response.end(HELLO_WORLD_BUFFER, NULL_HANDLER);
+    async.run(v -> {
+      HttpServerResponse response = request.response();
+      MultiMap headers = response.headers();
+      for (int i = 0;i < plaintextHeaders.length; i+= 2) {
+        headers.add(plaintextHeaders[i], plaintextHeaders[i + 1]);
+      }
+      response.end(HELLO_WORLD_BUFFER, NULL_HANDLER);
+    });
   }
 
   private void handleJson(HttpServerRequest request) {
-    HttpServerResponse response = request.response();
-    MultiMap headers = response.headers();
-    headers
-        .add(HEADER_CONTENT_TYPE, RESPONSE_TYPE_JSON)
-        .add(HEADER_SERVER, SERVER)
-        .add(HEADER_DATE, dateString);
-    response.end(new Message("Hello, World!").toBuffer(), NULL_HANDLER);
+    async.run(v -> {
+      HttpServerResponse response = request.response();
+      MultiMap headers = response.headers();
+      headers
+          .add(HEADER_CONTENT_TYPE, RESPONSE_TYPE_JSON)
+          .add(HEADER_SERVER, SERVER)
+          .add(HEADER_DATE, dateString);
+      response.end(new Message("Hello, World!").toBuffer(), NULL_HANDLER);
+    });
   }
 
   /**
@@ -210,23 +222,24 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
   }
 
   private void handleDb(HttpServerRequest req) {
-    HttpServerResponse resp = req.response();
-    SELECT_WORLD_QUERY.execute(Tuple.of(randomWorld()), res -> {
-      if (res.succeeded()) {
-        RowIterator<Row> resultSet = res.result().iterator();
-        if (!resultSet.hasNext()) {
+    async.run(v -> {
+      HttpServerResponse resp = req.response();
+      try {
+        RowSet<Row> resultSet = await(SELECT_WORLD_QUERY.execute(Tuple.of(randomWorld())));
+        RowIterator<Row> rows = resultSet.iterator();
+        if (!rows.hasNext()) {
           resp.setStatusCode(404).end();
           return;
         }
-        Row row = resultSet.next();
+        Row row = rows.next();
         resp
             .putHeader(HttpHeaders.SERVER, SERVER)
             .putHeader(HttpHeaders.DATE, dateString)
             .putHeader(HttpHeaders.CONTENT_TYPE, RESPONSE_TYPE_JSON)
             .end(Json.encode(new World(row.getInteger(0), row.getInteger(1))), NULL_HANDLER);
-      } else {
-        logger.error(res.cause());
-        resp.setStatusCode(500).end(res.cause().getMessage());
+      } catch (Exception cause) {
+        logger.error(cause);
+        resp.setStatusCode(500).end(cause.getMessage());
       }
     });
   }
@@ -346,17 +359,18 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
   }
 
   private void handleFortunes(HttpServerRequest req) {
-    SELECT_FORTUNE_QUERY.execute(ar -> {
+    async.run(v -> {
       HttpServerResponse response = req.response();
-      if (ar.succeeded()) {
+      try {
+        RowSet<Row> resultSet = await(SELECT_FORTUNE_QUERY.execute());
         List<Fortune> fortunes = new ArrayList<>();
-        RowIterator<Row> resultSet = ar.result().iterator();
-        if (!resultSet.hasNext()) {
+        RowIterator<Row> iterator = resultSet.iterator();
+        if (!iterator.hasNext()) {
           response.setStatusCode(404).end("No results");
           return;
         }
-        while (resultSet.hasNext()) {
-          Row row = resultSet.next();
+        while (iterator.hasNext()) {
+          Row row = iterator.next();
           fortunes.add(new Fortune(row.getInteger(0), row.getString(1)));
         }
         fortunes.add(new Fortune(0, "Additional fortune added at request time."));
@@ -366,8 +380,7 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
             .putHeader(HttpHeaders.DATE, dateString)
             .putHeader(HttpHeaders.CONTENT_TYPE, RESPONSE_TYPE_HTML)
             .end(FortunesTemplate.template(fortunes).render(factory).buffer(), NULL_HANDLER);
-      } else {
-        Throwable err = ar.cause();
+      } catch (Exception err) {
         logger.error("", err);
         response.setStatusCode(500).end(err.getMessage());
       }
@@ -425,5 +438,6 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
     logger.info("Vertx: " + version);
     logger.info("Event Loop Size: " + ((MultithreadEventExecutorGroup)vertx.nettyEventLoopGroup()).executorCount());
     logger.info("Native transport : " + nativeTransport);
+    logger.info("Use event loop scheduler : " + USE_EVENT_LOOP_SCHEDULER);
   }
 }
