@@ -18,7 +18,6 @@ import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
-import io.vertx.sqlclient.PoolOptions;
 import io.vertx.sqlclient.PreparedQuery;
 import io.vertx.sqlclient.PreparedStatement;
 import io.vertx.sqlclient.Row;
@@ -26,7 +25,6 @@ import io.vertx.sqlclient.RowIterator;
 import io.vertx.sqlclient.RowSet;
 import io.vertx.sqlclient.Tuple;
 import io.vertx.sqlclient.impl.SqlClientInternal;
-import io.vertx.sqlclient.impl.command.CompositeCommand;
 import vertx.model.Fortune;
 import vertx.model.Message;
 import vertx.model.World;
@@ -70,7 +68,7 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
     }
   }
 
-  private static final boolean USE_EVENT_LOOP_SCHEDULER = EventLoopScheduler.isAvailable();
+  private static final boolean USE_EVENT_LOOP_SCHEDULER = false;
 
   static Logger logger = LoggerFactory.getLogger(App.class.getName());
 
