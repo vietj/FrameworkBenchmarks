@@ -16,7 +16,6 @@ CMD export DBIP=`getent hosts tfb-database | awk '{ print $1 }'` && \
       -server \
       -XX:+UseNUMA \
       -XX:+UseParallelGC \
-      -XX:+AggressiveOpts \
       -Dvertx.disableMetrics=true \
       -Dvertx.disableH2c=true \
       -Dvertx.disableWebsockets=true \
