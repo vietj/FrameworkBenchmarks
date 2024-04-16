@@ -5,6 +5,7 @@ import com.fizzed.rocker.RockerOutput;
 import com.fizzed.rocker.RockerOutputFactory;
 import io.netty.buffer.ByteBuf;
 import io.vertx.core.buffer.Buffer;
+import io.vertx.core.buffer.impl.BufferInternal;
 import io.vertx.core.buffer.impl.PartialPooledByteBufAllocator;
 
 import java.io.IOException;
@@ -22,7 +23,7 @@ public class BufferRockerOutput implements RockerOutput<BufferRockerOutput> {
   }
 
   private final ByteBuf buff = PartialPooledByteBufAllocator.INSTANCE.directBuffer();
-  private final Buffer buffer = Buffer.buffer(buff);
+  private final Buffer buffer = BufferInternal.buffer(buff);
   private final ContentType contentType;
 
   BufferRockerOutput(ContentType contentType) {
