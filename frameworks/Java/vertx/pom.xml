@@ -33,12 +33,12 @@
 		<dependency>
 			<groupId>io.vertx</groupId>
 			<artifactId>vertx-core</artifactId>
-			<version>5.0.0-tfb-snapshot</version>
+			<version>5.0.0-tfb-SNAPSHOT</version>
 		</dependency>
 		<dependency>
 			<groupId>io.vertx</groupId>
 			<artifactId>vertx-core-logging</artifactId>
-			<version>5.0.0-tfb-snapshot</version>
+			<version>5.0.0-tfb-SNAPSHOT</version>
 		</dependency>
 		<dependency>
 			<groupId>io.vertx</groupId>
