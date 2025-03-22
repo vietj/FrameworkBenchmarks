@@ -5,6 +5,20 @@
 	<artifactId>vertx.benchmark</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 
+	<repositories>
+		<repository>
+			<id>vertx-snapshots-repository</id>
+			<name>Vert.x Snapshots Repository</name>
+			<url>https://s01.oss.sonatype.org/content/repositories/snapshots/</url>
+			<releases>
+				<enabled>false</enabled>
+			</releases>
+			<snapshots>
+				<enabled>true</enabled>
+			</snapshots>
+		</repository>
+	</repositories>
+
 	<properties>
 		<maven.compiler.source>17</maven.compiler.source>
 		<maven.compiler.target>17</maven.compiler.target>
@@ -19,12 +33,12 @@
 		<dependency>
 			<groupId>io.vertx</groupId>
 			<artifactId>vertx-core</artifactId>
-			<version>${stack.version}</version>
+			<version>5.0.0-tfb-snapshot</version>
 		</dependency>
 		<dependency>
 			<groupId>io.vertx</groupId>
 			<artifactId>vertx-core-logging</artifactId>
-			<version>${stack.version}</version>
+			<version>5.0.0-tfb-snapshot</version>
 		</dependency>
 		<dependency>
 			<groupId>io.vertx</groupId>
