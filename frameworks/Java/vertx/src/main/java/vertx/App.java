@@ -80,10 +80,10 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
   private static final String HELLO_WORLD = "Hello, world!";
   private static final Buffer HELLO_WORLD_BUFFER = Buffer.buffer(HELLO_WORLD, "UTF-8");
 
-  private static final CharSequence HEADER_SERVER = HttpHeaders.createOptimized("server");
-  private static final CharSequence HEADER_DATE = HttpHeaders.createOptimized("date");
-  private static final CharSequence HEADER_CONTENT_TYPE = HttpHeaders.createOptimized("content-type");
-  private static final CharSequence HEADER_CONTENT_LENGTH = HttpHeaders.createOptimized("content-length");
+  private static final CharSequence HEADER_SERVER = HttpHeaders.SERVER;
+  private static final CharSequence HEADER_DATE = HttpHeaders.DATE;
+  private static final CharSequence HEADER_CONTENT_TYPE = HttpHeaders.CONTENT_TYPE;
+  private static final CharSequence HEADER_CONTENT_LENGTH = HttpHeaders.CONTENT_LENGTH;
 
   private static final CharSequence HELLO_WORLD_LENGTH = HttpHeaders.createOptimized("" + HELLO_WORLD.length());
   private static final CharSequence SERVER = HttpHeaders.createOptimized("vert.x");
