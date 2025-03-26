@@ -4,7 +4,6 @@ import com.fizzed.rocker.ContentType;
 import com.fizzed.rocker.RockerOutputFactory;
 import io.netty.util.concurrent.MultithreadEventExecutorGroup;
 import io.vertx.core.internal.VertxInternal;
-import io.vertx.core.internal.http.HttpServerResponseInternal;
 import io.vertx.core.internal.logging.Logger;
 import io.vertx.core.internal.logging.LoggerFactory;
 import io.vertx.pgclient.*;
@@ -113,7 +112,7 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
   private HttpServer server;
   private SqlClientInternal client;
   private CharSequence dateString;
-  private MultiMap plaintextHeaders;
+  private HttpHeaders plaintextHeaders;
 
   private final RockerOutputFactory<BufferRockerOutput> factory = BufferRockerOutput.factory(ContentType.RAW);
 
@@ -124,12 +123,14 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
   private PreparedQuery<RowSet<Row>>[] AGGREGATED_UPDATE_WORLD_QUERY = new PreparedQuery[500];
   private WorldCache WORLD_CACHE;
 
-  private MultiMap plaintextHeaders() {
-    return plaintextHeaders = HttpHeaders.headers()
-            .set(HEADER_CONTENT_TYPE, RESPONSE_TYPE_PLAIN)
-            .set(HEADER_SERVER, RESPONSE_TYPE_PLAIN)
-            .set(HEADER_DATE, dateString)
-            .set(HEADER_CONTENT_LENGTH, HELLO_WORLD_LENGTH);
+  private HttpHeaders plaintextHeaders() {
+    return HttpHeaders
+            .headers()
+            .add(HEADER_CONTENT_TYPE, RESPONSE_TYPE_PLAIN)
+            .add(HEADER_SERVER, SERVER)
+            .add(HEADER_DATE, dateString)
+            .add(HEADER_CONTENT_LENGTH, HELLO_WORLD_LENGTH)
+            .copy(false);
   }
 
   @Override
@@ -266,8 +267,8 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
   }
 
   private void handlePlainText(HttpServerRequest request) {
-    HttpServerResponseInternal response = (HttpServerResponseInternal) request.response();
-    response.headers(plaintextHeaders)
+    request.response()
+            .headers(plaintextHeaders)
             .end(HELLO_WORLD_BUFFER);
   }
 
