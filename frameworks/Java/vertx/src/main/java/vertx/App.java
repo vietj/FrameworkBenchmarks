@@ -4,6 +4,7 @@ import com.fizzed.rocker.ContentType;
 import com.fizzed.rocker.RockerOutputFactory;
 import io.netty.util.concurrent.MultithreadEventExecutorGroup;
 import io.vertx.core.internal.VertxInternal;
+import io.vertx.core.internal.http.HttpServerResponseInternal;
 import io.vertx.core.internal.logging.Logger;
 import io.vertx.core.internal.logging.LoggerFactory;
 import io.vertx.pgclient.*;
@@ -112,7 +113,7 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
   private HttpServer server;
   private SqlClientInternal client;
   private CharSequence dateString;
-  private CharSequence[] plaintextHeaders;
+  private MultiMap plaintextHeaders;
 
   private final RockerOutputFactory<BufferRockerOutput> factory = BufferRockerOutput.factory(ContentType.RAW);
 
@@ -123,19 +124,26 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
   private PreparedQuery<RowSet<Row>>[] AGGREGATED_UPDATE_WORLD_QUERY = new PreparedQuery[500];
   private WorldCache WORLD_CACHE;
 
+  private MultiMap plaintextHeaders() {
+    return plaintextHeaders = HttpHeaders.headers()
+            .set(HEADER_CONTENT_TYPE, RESPONSE_TYPE_PLAIN)
+            .set(HEADER_SERVER, RESPONSE_TYPE_PLAIN)
+            .set(HEADER_DATE, dateString)
+            .set(HEADER_CONTENT_LENGTH, HELLO_WORLD_LENGTH);
+  }
+
   @Override
   public void start(Promise<Void> startPromise) throws Exception {
     int port = 8080;
     server = vertx.createHttpServer(new HttpServerOptions().setStrictMode(true))
             .requestHandler(App.this);
     dateString = createDateHeader();
-    plaintextHeaders = new CharSequence[] {
-        HEADER_CONTENT_TYPE, RESPONSE_TYPE_PLAIN,
-        HEADER_SERVER, SERVER,
-        HEADER_DATE, dateString,
-        HEADER_CONTENT_LENGTH, HELLO_WORLD_LENGTH };
+    plaintextHeaders = plaintextHeaders();
     JsonObject config = config();
-    vertx.setPeriodic(1000, id -> plaintextHeaders[5] = dateString = createDateHeader());
+    vertx.setPeriodic(1000, id -> {
+      dateString = createDateHeader();
+      plaintextHeaders = plaintextHeaders();
+    });
     PgConnectOptions options = new PgConnectOptions();
     options.setDatabase(config.getString("database", "hello_world"));
     options.setHost(config.getString("host", "tfb-database"));
@@ -258,12 +266,9 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
   }
 
   private void handlePlainText(HttpServerRequest request) {
-    HttpServerResponse response = request.response();
-    MultiMap headers = response.headers();
-    for (int i = 0;i < plaintextHeaders.length; i+= 2) {
-      headers.add(plaintextHeaders[i], plaintextHeaders[i + 1]);
-    }
-    response.end(HELLO_WORLD_BUFFER);
+    HttpServerResponseInternal response = (HttpServerResponseInternal) request.response();
+    response.headers(plaintextHeaders)
+            .end(HELLO_WORLD_BUFFER);
   }
 
   private void handleJson(HttpServerRequest request) {
