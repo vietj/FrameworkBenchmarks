@@ -112,7 +112,7 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
   private HttpServer server;
   private SqlClientInternal client;
   private CharSequence dateString;
-  private HttpHeaders plaintextHeaders;
+  private MultiMap plaintextHeaders;
 
   private final RockerOutputFactory<BufferRockerOutput> factory = BufferRockerOutput.factory(ContentType.RAW);
 
@@ -123,7 +123,7 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
   private PreparedQuery<RowSet<Row>>[] AGGREGATED_UPDATE_WORLD_QUERY = new PreparedQuery[500];
   private WorldCache WORLD_CACHE;
 
-  private HttpHeaders plaintextHeaders() {
+  private MultiMap plaintextHeaders() {
     return HttpHeaders
             .headers()
             .add(HEADER_CONTENT_TYPE, RESPONSE_TYPE_PLAIN)
@@ -267,9 +267,9 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
   }
 
   private void handlePlainText(HttpServerRequest request) {
-    request.response()
-            .headers(plaintextHeaders)
-            .end(HELLO_WORLD_BUFFER);
+    HttpServerResponse response = request.response();
+    response.headers().setAll(plaintextHeaders);
+    response.end(HELLO_WORLD_BUFFER);
   }
 
   private void handleJson(HttpServerRequest request) {
