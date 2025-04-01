@@ -136,7 +136,7 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
   @Override
   public void start(Promise<Void> startPromise) throws Exception {
     int port = 8080;
-    server = vertx.createHttpServer(new HttpServerOptions().setStrictMode(true))
+    server = vertx.createHttpServer(new HttpServerOptions().setStrictThreadMode(true))
             .requestHandler(App.this);
     dateString = createDateHeader();
     plaintextHeaders = plaintextHeaders();
