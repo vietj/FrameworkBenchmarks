@@ -23,6 +23,7 @@ CMD export DBIP=`getent hosts tfb-database | awk '{ print $1 }'` && \
       -Dvertx.disableContextTimings=true \
       -Dvertx.disableTCCL=true \
       -Dvertx.disableHttpHeadersValidation=true \
+      -Dvertx.enableHttpResponseHeadersCaching=true \
       -Dvertx.eventLoopPoolSize=$((`grep --count ^processor /proc/cpuinfo`)) \
       -Dio.netty.buffer.checkBounds=false  \
       -Dio.netty.buffer.checkAccessible=false \
