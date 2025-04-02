@@ -76,7 +76,7 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
 
   private static final CharSequence RESPONSE_TYPE_PLAIN = HttpHeaders.createOptimized("text/plain");
   private static final CharSequence RESPONSE_TYPE_HTML = HttpHeaders.createOptimized("text/html; charset=UTF-8");
-  static final CharSequence RESPONSE_TYPE_JSON = HttpHeaders.createOptimized("application/json");
+  private static final CharSequence RESPONSE_TYPE_JSON = HttpHeaders.createOptimized("application/json");
 
   private static final String HELLO_WORLD = "Hello, world!";
   private static final Buffer HELLO_WORLD_BUFFER = Buffer.buffer(HELLO_WORLD, "UTF-8");
@@ -87,6 +87,7 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
   private static final CharSequence HEADER_CONTENT_LENGTH = HttpHeaders.CONTENT_LENGTH;
 
   private static final CharSequence HELLO_WORLD_LENGTH = HttpHeaders.createOptimized("" + HELLO_WORLD.length());
+  private static final CharSequence JSON_LENGTH = HttpHeaders.createOptimized("" + new Message("Hello, World!").toJson().length());
   private static final CharSequence SERVER = HttpHeaders.createOptimized("vert.x");
 
   private static final String SELECT_WORLD = "SELECT id, randomnumber from WORLD where id=$1";
@@ -114,6 +115,7 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
   private SqlClientInternal client;
   private CharSequence dateString;
   private MultiMap plaintextHeaders;
+  private MultiMap jsonHeaders;
 
   private final RockerOutputFactory<BufferRockerOutput> factory = BufferRockerOutput.factory(ContentType.RAW);
 
@@ -134,6 +136,16 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
             .copy(false);
   }
 
+  private MultiMap jsonHeaders() {
+    return HttpHeaders
+            .headers()
+            .add(HEADER_CONTENT_TYPE, RESPONSE_TYPE_JSON)
+            .add(HEADER_SERVER, SERVER)
+            .add(HEADER_DATE, dateString)
+            .add(HEADER_CONTENT_LENGTH, JSON_LENGTH)
+            .copy(false);
+  }
+
   @Override
   public void start(Promise<Void> startPromise) throws Exception {
     int port = 8080;
@@ -144,10 +156,12 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
             .requestHandler(App.this);
     dateString = createDateHeader();
     plaintextHeaders = plaintextHeaders();
+    jsonHeaders = jsonHeaders();
     JsonObject config = config();
     vertx.setPeriodic(1000, id -> {
       dateString = createDateHeader();
       plaintextHeaders = plaintextHeaders();
+      jsonHeaders = jsonHeaders();
     });
     PgConnectOptions options = new PgConnectOptions();
     options.setDatabase(config.getString("database", "hello_world"));
@@ -278,11 +292,7 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
 
   private void handleJson(HttpServerRequest request) {
     HttpServerResponse response = request.response();
-    MultiMap headers = response.headers();
-    headers
-        .add(HEADER_CONTENT_TYPE, RESPONSE_TYPE_JSON)
-        .add(HEADER_SERVER, SERVER)
-        .add(HEADER_DATE, dateString);
+    response.headers().setAll(jsonHeaders);
     response.end(new Message("Hello, World!").toJson());
   }
 
