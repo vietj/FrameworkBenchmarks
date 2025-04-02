@@ -533,12 +533,10 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
     logger.info("Event Loop Size: " + ((MultithreadEventExecutorGroup)vertx.nettyEventLoopGroup()).executorCount());
     logger.info("Native transport : " + nativeTransport);
     logger.info("Transport : " + transport);
-    logger.info("Validate headers : " + !SysProps.DISABLE_HTTP_HEADERS_VALIDATION.getBoolean());
-    logger.info("Intern request headers : " + SysProps.INTERN_COMMON_HTTP_REQUEST_HEADERS_TO_LOWER_CASE.getBoolean());
-    logger.info("Cache response headers : " + SysProps.CACHE_IMMUTABLE_HTTP_RESPONSE_HEADERS.getBoolean());
-    logger.info("Metrics : " + !SysProps.DISABLE_METRICS.getBoolean());
-    logger.info("Time contexts : " + !SysProps.DISABLE_CONTEXT_TIMINGS.getBoolean());
     logger.info("Netty buffer bound check : " + System.getProperty("io.netty.buffer.checkBounds"));
     logger.info("Netty buffer accessibility check : " + System.getProperty("io.netty.buffer.checkAccessible"));
+    for (SysProps sysProp : SysProps.values()) {
+      logger.info(sysProp.name +  " : " + sysProp.get());
+    }
   }
 }
