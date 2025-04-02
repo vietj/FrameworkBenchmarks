@@ -3,6 +3,7 @@ package vertx;
 import com.fizzed.rocker.ContentType;
 import com.fizzed.rocker.RockerOutputFactory;
 import io.netty.util.concurrent.MultithreadEventExecutorGroup;
+import io.vertx.core.impl.SysProps;
 import io.vertx.core.internal.VertxInternal;
 import io.vertx.core.internal.logging.Logger;
 import io.vertx.core.internal.logging.LoggerFactory;
@@ -136,7 +137,10 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
   @Override
   public void start(Promise<Void> startPromise) throws Exception {
     int port = 8080;
-    server = vertx.createHttpServer(new HttpServerOptions().setStrictThreadMode(true))
+    server = vertx
+            .createHttpServer(new HttpServerOptions()
+                    .setHttp2ClearTextEnabled(false)
+                    .setStrictThreadMode(true))
             .requestHandler(App.this);
     dateString = createDateHeader();
     plaintextHeaders = plaintextHeaders();
@@ -481,7 +485,11 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
       }
     }
     JsonObject config = new JsonObject(new String(Files.readAllBytes(new File(args[0]).toPath())));
-    Vertx vertx = Vertx.vertx(new VertxOptions().setEventLoopPoolSize(eventLoopPoolSize).setPreferNativeTransport(true));
+    Vertx vertx = Vertx.vertx(new VertxOptions()
+            .setEventLoopPoolSize(eventLoopPoolSize)
+            .setPreferNativeTransport(true)
+            .setDisableTCCL(true)
+    );
     vertx.exceptionHandler(err -> {
       err.printStackTrace();
     });
@@ -525,5 +533,12 @@ public class App extends AbstractVerticle implements Handler<HttpServerRequest> 
     logger.info("Event Loop Size: " + ((MultithreadEventExecutorGroup)vertx.nettyEventLoopGroup()).executorCount());
     logger.info("Native transport : " + nativeTransport);
     logger.info("Transport : " + transport);
+    logger.info("Validate headers : " + !SysProps.DISABLE_HTTP_HEADERS_VALIDATION.getBoolean());
+    logger.info("Intern request headers : " + SysProps.INTERN_COMMON_HTTP_REQUEST_HEADERS_TO_LOWER_CASE.getBoolean());
+    logger.info("Cache response headers : " + SysProps.CACHE_IMMUTABLE_HTTP_RESPONSE_HEADERS.getBoolean());
+    logger.info("Metrics : " + !SysProps.DISABLE_METRICS.getBoolean());
+    logger.info("Time contexts : " + !SysProps.DISABLE_CONTEXT_TIMINGS.getBoolean());
+    logger.info("Netty buffer bound check : " + System.getProperty("io.netty.buffer.checkBounds"));
+    logger.info("Netty buffer accessibility check : " + System.getProperty("io.netty.buffer.checkAccessible"));
   }
 }
